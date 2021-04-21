@@ -43,26 +43,32 @@ import gc
 # https://meta.wikimedia.org/wiki/Research:Metrics#Volume_of_contribution
 # https://meta.wikimedia.org/wiki/Research:Wikistats_metrics/Active_editors
 
-
+community_health_metrics_db = 'community_health_metrics.db'
 
 # MAIN
 def main():
 
 
-
+    create_community_health_metrics_db()
 
     for languagecode in wikilanguagecodes: # wikilanguagecodes
-
-        create_community_health_metrics_db()
+        print (languagecode)
+ 
         editor_metrics_dump_iterator(languagecode) # it fills the database cawiki_editors, cawiki_editor_metrics
-        print ('dump.\n')
-        input('')
+        print ('dump iterator done.\n')
+        # input('')
+
 
         editor_metrics_db_iterator(languagecode) # it fills the database cawiki_editor_metrics
-        print ('database.\n')
-        input('')
+        print ('database iterator done.\n')
+        print ('hell yeh')
+        # input('')
 
-        community_metrics_db_iterator(languagecode) # it fills the database cawiki_community_metrics
+#        community_metrics_db_iterator(languagecode) # it fills the database cawiki_community_metrics
+
+        # input('')
+
+
 
     print ('done')
 
@@ -108,7 +114,7 @@ def create_community_health_metrics_db():
             cursor.execute("DROP TABLE "+table_name+";")
         except:
             pass
-        query = ("CREATE TABLE IF NOT EXISTS "+table_name+" (year_month text, group_name text, g1_variable text, g1_calculation text, g1_value text, g2_variable text, g2_calculation text, g2_value text, g1_count float, g2_count float, PRIMARY KEY (group_name, g1_variable, g1_calculation, g1_value, g2_variable, g2_calculation, g2_value))")
+        query = ("CREATE TABLE IF NOT EXISTS "+table_name+" (year_month text, topic text, m1 text, m1_calculation text, m1_value text, m2 text, m2_calculation text, m2_value text, m1_count float, m2_count float, PRIMARY KEY (topic, m1, m1_calculation, m1_value, m2, m2_calculation, m2_value))")
         cursor.execute(query)
 
 
@@ -185,7 +191,10 @@ def editor_metrics_dump_iterator(languagecode):
     print (function_name)
 
     d_paths, cym = get_mediawiki_paths(languagecode)
+    cym_timestamp_dt = datetime.datetime.today().replace(day=1) #.strftime('%Y-%m-%d %H:%M:%S')
 
+    # print (cym_timestamp_dt)
+    # input('')
 
     if (len(d_paths)==0):
         print ('dump error. this language has no mediawiki_history dump: '+languagecode)
@@ -239,10 +248,29 @@ def editor_metrics_dump_iterator(languagecode):
     editor_monthly_seconds_between_edits = {}
     editor_monthly_editing_days = {}
 
-   
+    editor_monthly_created_articles = {}
+    editor_monthly_deleted_articles = {}
+    editor_monthly_moved_articles = {}
+    editor_monthly_undeleted_articles = {}
+
+    editor_monthly_accounts_created = {}
+    editor_monthly_users_renamed = {}
+    editor_monthly_autoblocks = {}
+
+    editor_monthly_edits_reverted = {}
+    editor_monthly_reverts_made = {}
+
+
 
     last_year_month = 0
     first_date = datetime.datetime.strptime('2001-01-01 01:15:15','%Y-%m-%d %H:%M:%S')
+
+
+#    print (d_paths)
+#    input('')
+
+#    d_paths = d_paths[15:]
+
 
     for dump_path in d_paths:
 
@@ -301,60 +329,123 @@ def editor_metrics_dump_iterator(languagecode):
                 user_id_user_groups_dict[event_user_id] = event_user_groups
 
 
-            # if event_user_id == 213 or event_user_text == 'Stebbiv':
-            #     print ('***')
-            #     print (event_user_id, event_user_text, event_user_groups)
-            #     input('')
 
-            if event_type == 'altergroups':
-                user_id = values[36]
-                user_group = values[41]
-                cur_ug = ''
+            page_namespace = values[28]   
+            if event_entity == 'revision':
 
-                if user_group != '' and user_group != None:
-                  
-                    try:
-                        cur_ug = editor_user_group_dict[user_id]
+                revision_is_identity_reverted = values[64]
 
+#                són edits que seran reverted en el futur.
+                if revision_is_identity_reverted == 'true':
 
-                        if len(cur_ug) < len(user_group):
-                            change = user_group.replace(cur_ug,'').strip(',')
-                            metric_name = 'granted_flag'
-                        else:
-                            change = cur_ug.replace(user_group,'').strip(',')
-                            metric_name = 'removed_flag' # this is only for the case that one flag is removed by another editor. when an editor removes him/herself the flag, it does not appear here.
-                    except:
-                        change = user_group
-                        metric_name = 'granted_flag'
+                    try: editor_monthly_edits_reverted[event_user_id] = editor_monthly_edits_reverted[event_user_id]+1
+                    except: editor_monthly_edits_reverted[event_user_id] = 1
 
-
-                    # change (what is new + o -); 
-                    # user_group (what is he has after the change); 
-                    # cur_ug (what he had right before); 
-                    # values[42] (what he'll have in the future and in the end) 
-
+                    # print ('made',revision_is_identity_reverted, values)
                     # input('')
-                    editor_user_group_dict[user_id] = user_group
 
 
-                    if change != '':
+                revision_is_identity_revert = values[67]
+#                són edits que revert un altre edit
+                if revision_is_identity_revert == 'true':
+                    
+                    try: editor_monthly_reverts_made[event_user_id] = editor_monthly_reverts_made[event_user_id]+1
+                    except: editor_monthly_reverts_made[event_user_id] = 1
 
-                        # user_text = values[38]
-                        # print (user_id, user_text, ' - ', change, ' - ', user_group, ' - ', cur_ug ,' - ', values[42], ' - ', metric_name, event_timestamp)                  
-                        # print ('\n',event_type, event_entity, event_user_text, cur_ug, event_user_groups,'\n',line)
+                    # print ('received',revision_is_identity_revert, values)
+                    # input('')
 
-        
-                        if ',' in change:
-                            change_ = change.split(',')
-                            event_timestamp2 = event_timestamp[:len(event_timestamp)-2] 
-                            editor_user_group_dict_timestamp[user_id,event_timestamp] = [metric_name, change_[0], cur_ug]
-                            editor_user_group_dict_timestamp[user_id,event_timestamp2] = [metric_name, change_[1], cur_ug]
 
-                        else:
-                            editor_user_group_dict_timestamp[user_id,event_timestamp] = [metric_name, change, cur_ug]
+            elif event_entity == 'page' and page_namespace == '0':
+    
+                if event_type == 'create':
+                    try: editor_monthly_created_articles[event_user_id] = editor_monthly_created_articles[event_user_id]+1
+                    except: editor_monthly_created_articles[event_user_id] = 1
 
-                        # if ',' in change:
-                        #     input('')
+
+                elif event_type == 'delete':
+                    try: editor_monthly_deleted_articles[event_user_id] = editor_monthly_deleted_articles[event_user_id]+1
+                    except: editor_monthly_deleted_articles[event_user_id] = 1
+
+
+                elif event_type == 'move':
+                    try: editor_monthly_moved_articles[event_user_id] = editor_monthly_moved_articles[event_user_id]+1
+                    except: editor_monthly_moved_articles[event_user_id] = 1
+
+
+                elif event_type == 'restore':
+                    try: editor_monthly_undeleted_articles[event_user_id] = editor_monthly_undeleted_articles[event_user_id]+1
+                    except: editor_monthly_undeleted_articles[event_user_id] = 1
+
+
+
+
+            elif event_entity == 'user':
+
+                user_text = str(values[38]) # this is target of the event
+
+                if event_type == 'create' and event_user_text != user_text:
+                    try: editor_monthly_accounts_created[event_user_id] = editor_monthly_accounts_created[event_user_id]+1
+                    except: editor_monthly_accounts_created[event_user_id] = 1
+
+
+                elif event_type == 'rename':
+                    try: editor_monthly_users_renamed[event_user_id] = editor_monthly_users_renamed[event_user_id]+1
+                    except: editor_monthly_users_renamed[event_user_id] = 1
+
+
+                elif event_type == 'altergroups':
+                        user_id = values[36]
+                        user_group = values[41]
+                        cur_ug = ''
+
+                        if user_group != '' and user_group != None:
+                          
+                            try:
+                                cur_ug = editor_user_group_dict[user_id]
+
+
+                                if len(cur_ug) < len(user_group):
+                                    change = user_group.replace(cur_ug,'').strip(',')
+                                    metric_name = 'granted_flag'
+                                else:
+                                    change = cur_ug.replace(user_group,'').strip(',')
+                                    metric_name = 'removed_flag' # this is only for the case that one flag is removed by another editor. when an editor removes him/herself the flag, it does not appear here.
+                            except:
+                                change = user_group
+                                metric_name = 'granted_flag'
+
+                            # change (what is new + o -); 
+                            # user_group (what is he has after the change); 
+                            # cur_ug (what he had right before); 
+                            # values[42] (what he'll have in the future and in the end) 
+
+                            # input('')
+                            editor_user_group_dict[user_id] = user_group
+
+
+                            if change != '':
+
+                                # user_text = values[38]
+                                # print (user_id, user_text, ' - ', change, ' - ', user_group, ' - ', cur_ug ,' - ', values[42], ' - ', metric_name, event_timestamp)                  
+                                # print ('\n',event_type, event_entity, event_user_text, cur_ug, event_user_groups,'\n',line)
+
+                
+                                if ',' in change:
+                                    change_ = change.split(',')
+                                    event_timestamp2 = event_timestamp[:len(event_timestamp)-2] 
+                                    editor_user_group_dict_timestamp[user_id,event_timestamp] = [metric_name, change_[0], cur_ug]
+                                    editor_user_group_dict_timestamp[user_id,event_timestamp2] = [metric_name, change_[1], cur_ug]
+
+                                else:
+                                    editor_user_group_dict_timestamp[user_id,event_timestamp] = [metric_name, change, cur_ug]
+
+
+                elif event_type == 'alterblocks':
+                    try: editor_monthly_autoblocks[event_user_id] = editor_monthly_autoblocks[event_user_id]+1
+                    except: editor_monthly_autoblocks[event_user_id] = 1
+
+
 
 
             event_is_bot_by = values[13]
@@ -379,7 +470,7 @@ def editor_metrics_dump_iterator(languagecode):
 
 
             # MONTHLY NAMESPACES EDIT COUNTER
-            page_namespace = values[28]
+
             if page_namespace == '0':
                 try: editor_monthly_namespace0_edits[event_user_id] = editor_monthly_namespace0_edits[event_user_id]+1
                 except: editor_monthly_namespace0_edits[event_user_id] = 1
@@ -465,7 +556,11 @@ def editor_metrics_dump_iterator(languagecode):
                 except: editor_monthly_editing_days[event_user_id]=1
 
 
-            ####### ---------         
+
+
+
+
+            #######---------    ---------    ---------    ---------    ---------    ---------    
 
             # CHECK MONTH CHANGE AND INSERT MONTHLY EDITS/NAMESPACES EDITS/SECONDS
             current_year_month = datetime.datetime.strptime(event_timestamp_dt.strftime('%Y-%m'),'%Y-%m')
@@ -479,9 +574,47 @@ def editor_metrics_dump_iterator(languagecode):
 
                 lym_days = calendar.monthrange(int(ly),int(lm))[1]
 
+
+                monthly_articles = []
+                monthly_user_actions = []
+                monthly_reverts = []
+
                 monthly_edits = []
                 monthly_seconds = []
                 namespaces = []
+
+
+                for user_id, edits in editor_monthly_created_articles.items():
+                    monthly_articles.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_created_articles', lym, ''))
+
+                for user_id, edits in editor_monthly_deleted_articles.items():
+                    monthly_articles.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_deleted_articles', lym, ''))
+
+                for user_id, edits in editor_monthly_moved_articles.items():
+                    monthly_articles.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_moved_articles', lym, ''))
+
+                for user_id, edits in editor_monthly_undeleted_articles.items():
+                    monthly_articles.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_undeleted_articles', lym, ''))
+
+
+
+                for user_id, edits in editor_monthly_accounts_created.items():
+                    monthly_user_actions.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_accounts_created', lym, ''))
+
+                for user_id, edits in editor_monthly_users_renamed.items():
+                    monthly_user_actions.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_users_renamed', lym, ''))
+
+                for user_id, edits in editor_monthly_autoblocks.items():
+                    monthly_user_actions.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_autoblocks', lym, ''))
+
+
+
+                for user_id, edits in editor_monthly_edits_reverted.items():
+                    monthly_user_actions.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_edits_reverted', lym, ''))
+
+                for user_id, edits in editor_monthly_reverts_made.items():
+                    monthly_user_actions.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_reverts_made', lym, ''))
+
 
 
                 for user_id, edits in editor_monthly_edits.items():
@@ -589,20 +722,37 @@ def editor_metrics_dump_iterator(languagecode):
                             namespaces.append((user_id, user_id_user_name_dict[user_id], flags, None, metric_name, lym, timestamp))
                             # print ((user_id, user_id_user_name_dict[user_id], flags, None, metric_name, lym, timestamp))
 
-
-
                     except: pass                    
 
 
                 query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, rel_value, metric_name, year_month, timestamp) VALUES (?,?,?,?,?,?,?);'
+                cursor.executemany(query,monthly_articles)
+                cursor.executemany(query,monthly_user_actions)
+                cursor.executemany(query,monthly_reverts)
                 cursor.executemany(query,monthly_edits)
-                cursor.executemany(query,namespaces)
                 cursor.executemany(query,monthly_seconds)
+                cursor.executemany(query,namespaces)
+
                 conn.commit()
+
+                monthly_articles = []
+                monthly_user_actions = []
+                monthly_reverts = []
 
                 monthly_edits = []
                 monthly_seconds = []
                 namespaces = []
+
+
+                editor_monthly_created_articles = {}
+                editor_monthly_deleted_articles = {}
+                editor_monthly_moved_articles = {}
+                editor_monthly_undeleted_articles = {}
+                editor_monthly_accounts_created = {}
+                editor_monthly_users_renamed = {}
+                editor_monthly_autoblocks = {}
+                editor_monthly_edits_reverted = {}
+                editor_monthly_reverts_made = {}
 
                 editor_monthly_namespace0_edits = {}
                 editor_monthly_namespace1_edits = {}
@@ -629,6 +779,10 @@ def editor_metrics_dump_iterator(languagecode):
 
         
             last_year_month = current_year_month
+
+
+
+
 
             ####### ---------
 
@@ -724,13 +878,11 @@ def editor_metrics_dump_iterator(languagecode):
 
 
 
-
         # SURVIVAL MEASURES INSERT
         query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, rel_value, metric_name, year_month, timestamp) VALUES (?,?,?,?,?,?,?);'
         cursor.executemany(query,survival_measures)
         conn.commit()
         survival_measures = []
-
 
 
         # MONTHLY EDITS/SECONDS INSERT (LAST ROUND)
@@ -763,15 +915,13 @@ def editor_metrics_dump_iterator(languagecode):
             monthly_seconds = []
 
 
-
-
         # USER CHARACTERISTICS INSERT
         user_characteristics1 = []
         user_characteristics2 = []
         for user_id, user_name in user_id_user_name_dict.items():
             
             try: user_flags = user_id_user_groups_dict[user_id]
-            except: user_flags = ''
+            except: user_flags = None
 
             try: bot = user_id_bot_dict[user_id]
             except: bot = 'editor'
@@ -781,28 +931,29 @@ def editor_metrics_dump_iterator(languagecode):
 
 
             try: registration_date = editor_registration_date[user_id]
-            except: registration_date = ''
+            except: registration_date = None
             
-            if registration_date == '': # THIS IS SOMETHING WE "ASSUME" BECAUSE THERE ARE MANY ACCOUNTS WITHOUT A REGISTRATION DATE.
+            if registration_date == None: # THIS IS SOMETHING WE "ASSUME" BECAUSE THERE ARE MANY ACCOUNTS WITHOUT A REGISTRATION DATE.
                 try: registration_date = editor_first_edit_timestamp[user_id]
-                except: registration_date = ''
+                except: registration_date = None
 
-            if registration_date != '': year_month_registration = datetime.datetime.strptime(registration_date[:len(registration_date)-2],'%Y-%m-%d %H:%M:%S').strftime('%Y-%m')
-            else: year_month_registration = ''
+            if registration_date != '' and registration_date != None: year_month_registration = datetime.datetime.strptime(registration_date[:len(registration_date)-2],'%Y-%m-%d %H:%M:%S').strftime('%Y-%m')
+            else: year_month_registration = None
 
             try: fe = editor_first_edit_timestamp[user_id]
-            except: fe = ''
+            except: fe = None
 
             try: 
                 le = editor_last_edit_timestamp[user_id]
                 year_last_edit = datetime.datetime.strptime(le[:len(le)-2],'%Y-%m-%d %H:%M:%S').strftime('%Y')
 
+
             except: 
-                le = ''
-                year_last_edit
+                le = None
+                year_last_edit = None
 
 
-            if fe != '':  
+            if fe != None and fe != '':  
                 year_month = datetime.datetime.strptime(fe[:len(fe)-2],'%Y-%m-%d %H:%M:%S').strftime('%Y-%m')
                 year_first_edit = datetime.datetime.strptime(fe[:len(fe)-2],'%Y-%m-%d %H:%M:%S').strftime('%Y')
 
@@ -810,47 +961,62 @@ def editor_metrics_dump_iterator(languagecode):
                 if int(year_first_edit) >= 2006 < 2011: lustrum_first_edit = '2006-2010'
                 if int(year_first_edit) >= 2011 < 2016: lustrum_first_edit = '2011-2015'
                 if int(year_first_edit) >= 2016 < 2021: lustrum_first_edit = '2016-2020'
-                if int(year_first_edit) >= 2020 < 2026: lustrum_first_edit = '2021-2025'
+                if int(year_first_edit) >= 2021 < 2026: lustrum_first_edit = '2021-2025'
 
                 fe_d = datetime.datetime.strptime(fe[:len(fe)-2],'%Y-%m-%d %H:%M:%S')
             else:
-                year_month = ''
-                year_first_edit = ''
-                lustrum_first_edit = ''
-                fe_d = ''
+                year_month = None
+                year_first_edit = None
+                lustrum_first_edit = None
+                fe_d = None
 
 
-            if le != '':
+            if le != None:
                 le_d = datetime.datetime.strptime(le[:len(le)-2],'%Y-%m-%d %H:%M:%S')
-                days_since_last_edit = (event_timestamp_dt - le_d).days
+                days_since_last_edit = (cym_timestamp_dt - le_d).days
             else:
-                le_d = ''
-                days_since_last_edit = ''
+                le_d = None
+                days_since_last_edit = None
 
 
-            if fe != '' and le != '': lifetime_days =  (le_d - fe_d).days
-            else: lifetime_days = 0
+            if fe != None and fe != '' and le != None: lifetime_days =  (le_d - fe_d).days
+            else: lifetime_days = None
         
             try: se = editor_seconds_since_last_edit[user_id]
-            except: se = ''
+            except: se = None
 
             user_characteristics1.append((user_id, user_name, registration_date, year_month_registration,  fe, year_month, year_first_edit, lustrum_first_edit, survived60d))
 
-            user_characteristics2.append((bot, user_flags, le, year_last_edit, lifetime_days, days_since_last_edit, se, user_id, user_name))
+ 
+            if le != None:
+                user_characteristics2.append((bot, user_flags, le, year_last_edit, lifetime_days, days_since_last_edit, se, user_id, user_name))
+
+
+            # if user_id == 296 or user_name == 'Jolle':
+            #     print ((user_id, user_name, registration_date, year_month_registration,  fe, year_month, year_first_edit, lustrum_first_edit, survived60d))
+            #     print ((bot, user_flags, le, year_last_edit, lifetime_days, days_since_last_edit, se, user_id, user_name))
+            #     print (cym_timestamp_dt,le_d)
+                # print (editor_last_edit_timestamp[user_id])
 
 
         query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editors (user_id, user_name, registration_date, year_month_registration, first_edit_timestamp, year_month_first_edit, year_first_edit, lustrum_first_edit, survived60d) VALUES (?,?,?,?,?,?,?,?,?);'
         cursor.executemany(query,user_characteristics1)
+        conn.commit()
 
         query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editors (bot, user_flags, last_edit_timestamp, year_last_edit, lifetime_days, days_since_last_edit, seconds_between_last_two_edits, user_id, user_name) VALUES (?,?,?,?,?,?,?,?,?);'
         cursor.executemany(query,user_characteristics2)
+        conn.commit()
 
         query = 'UPDATE '+languagecode+'wiki_editors SET bot = ?, user_flags = ?, last_edit_timestamp = ?, year_last_edit = ?, lifetime_days = ?, days_since_last_edit = ?, seconds_between_last_two_edits = ? WHERE user_id = ? AND user_name = ?;'
         cursor.executemany(query,user_characteristics2)
         conn.commit()
 
+        print (len(user_characteristics1),len(user_characteristics2))
+
+
         user_characteristics1 = []
         user_characteristics2 = []
+#        user_id_user_name_dict = {}
 
         # insert or ignore + update
         user_id_bot_dict = {}
@@ -863,21 +1029,46 @@ def editor_metrics_dump_iterator(languagecode):
         editor_registration_date = {}
 
 
+        # keep only pending monthly edits
+        print (len(user_id_user_name_dict))
+        user_id_user_name_dict2 = {}
+        for k in editor_monthly_created_articles.keys():
+            user_id_user_name_dict2[k]=user_id_user_name_dict[k]
+        for k in editor_monthly_deleted_articles.keys():
+            user_id_user_name_dict2[k]=user_id_user_name_dict[k]
+        for k in editor_monthly_moved_articles.keys():
+            user_id_user_name_dict2[k]=user_id_user_name_dict[k]
+        for k in editor_monthly_undeleted_articles.keys():
+            user_id_user_name_dict2[k]=user_id_user_name_dict[k]
+        for k in editor_monthly_accounts_created.keys():
+            user_id_user_name_dict2[k]=user_id_user_name_dict[k]
+        for k in editor_monthly_users_renamed.keys():
+            user_id_user_name_dict2[k]=user_id_user_name_dict[k]
+        for k in editor_monthly_autoblocks.keys():
+            user_id_user_name_dict2[k]=user_id_user_name_dict[k]
+        for k in editor_monthly_edits_reverted.keys():
+            user_id_user_name_dict2[k]=user_id_user_name_dict[k]
+        for k in editor_monthly_reverts_made.keys():
+            user_id_user_name_dict2[k]=user_id_user_name_dict[k]
+        for k in editor_monthly_edits.keys():
+            user_id_user_name_dict2[k]=user_id_user_name_dict[k]
+
+        user_id_user_name_dict = user_id_user_name_dict2
+        user_id_user_name_dict2 = {}
+        print (len(user_id_user_name_dict))
+
 
         # END OF THE DUMP!!!!
         print ('end of the dump.')
         print ('*')
         print (str(datetime.timedelta(seconds=time.time() - iterTime)))
+#        input('')
 
 
 
-
-
-
-
-
+ 
     # AGGREGATED METRICS (EDIT COUNTS)
-    monthly_aggregated_metrics = {'monthly_edits':'edit_count', 'monthly_user_page_edit_count': 'edit_count_editor_user_page', 'monthly_user_page_talk_page_edit_count': 'edit_count_editor_user_page_talk_page', 'monthly_edits_ns0_main':'edit_count_ns0_main', 'monthly_edits_ns1_talk':'edit_count_ns1_talk', 'monthly_edits_ns2_user':'edit_count_ns2_user', 'monthly_edits_ns3_user_talk': 'edit_count_ns3_user_talk', 'monthly_edits_ns4_project':'edit_count_ns4_project', 'monthly_edits_ns5_project_talk': 'edit_count_ns5_project_talk', 'monthly_edits_ns6_file': 'edit_count_edits_ns6_file', 'monthly_edits_ns7_file_talk':'edit_count_ns7_file_talk', 'monthly_edits_ns8_mediawiki': 'edit_count_ns8_mediawiki', 'monthly_edits_ns9_mediawiki_talk': 'edit_count_ns9_mediawiki_talk', 'monthly_edits_ns10_template':'edit_count_ns10_template', 'monthly_edits_ns11_template_talk':'edit_count_ns11_template_talk', 'monthly_edits_ns12_help':'edit_count_ns12_help','monthly_edits_ns13_help_talk':'edit_count_ns13_help_talk','monthly_edits_ns14_category':'edit_count_ns14_category','monthly_edits_ns15_category_talk':'edit_count_ns15_category_talk'}
+    monthly_aggregated_metrics = {'monthly_edits':'edit_count', 'monthly_user_page_edit_count': 'edit_count_editor_user_page', 'monthly_user_page_talk_page_edit_count': 'edit_count_editor_user_page_talk_page', 'monthly_edits_ns0_main':'edit_count_ns0_main', 'monthly_edits_ns1_talk':'edit_count_ns1_talk', 'monthly_edits_ns2_user':'edit_count_ns2_user', 'monthly_edits_ns3_user_talk': 'edit_count_ns3_user_talk', 'monthly_edits_ns4_project':'edit_count_ns4_project', 'monthly_edits_ns5_project_talk': 'edit_count_ns5_project_talk', 'monthly_edits_ns6_file': 'edit_count_edits_ns6_file', 'monthly_edits_ns7_file_talk':'edit_count_ns7_file_talk', 'monthly_edits_ns8_mediawiki': 'edit_count_ns8_mediawiki', 'monthly_edits_ns9_mediawiki_talk': 'edit_count_ns9_mediawiki_talk', 'monthly_edits_ns10_template':'edit_count_ns10_template', 'monthly_edits_ns11_template_talk':'edit_count_ns11_template_talk', 'monthly_edits_ns12_help':'edit_count_ns12_help','monthly_edits_ns13_help_talk':'edit_count_ns13_help_talk','monthly_edits_ns14_category':'edit_count_ns14_category','monthly_edits_ns15_category_talk':'edit_count_ns15_category_talk','monthly_created_articles':'created_articles_count','monthly_deleted_articles':'deleted_articles_count','monthly_moved_articles':'moved_articles_count','monthly_undeleted_articles':'undeleted_articles_count','monthly_accounts_created':'created_accounts_count','monthly_users_renamed':'users_renamed_count','monthly_autoblocks':'autoblocks_count','monthly_edits_reverted':'edits_reverted_count','monthly_reverts_made':'reverts_made_count'}
 
 
     conn2 = sqlite3.connect(databases_path + community_health_metrics_db); cursor2 = conn2.cursor()
@@ -908,25 +1099,28 @@ def editor_metrics_dump_iterator(languagecode):
         conn2.commit()
 
 
+
+    edit_counts = []
     query = 'SELECT user_id, user_name, AVG(abs_value) FROM '+languagecode+'wiki_editor_metrics WHERE metric_name = "monthly_edits" GROUP BY 2;'
     for row in cursor.execute(query):
-        edit_counts.append((row[0],row[1],row[2],'monthly_edit_count_bin',lym))
-            ec = row[2]
-            bin_v = ''
-            if ec > 1 and ec <= 5: bin_v = '1-5'
-            if ec > 5 and ec <= 10: bin_v = '6-10'
-            if ec > 10 and ec <= 100: bin_v = '11-100'
-            if ec > 100 and ec <= 500: bin_v = '101-500'
-            if ec > 500 and ec <= 1000: bin_v = '501-1000'
-            if ec > 1000 and ec <= 5000: bin_v = '1001-5000'
-            if ec > 5000: bin_v = '5001+'
-            if bin_v != '':
-                edit_counts.append((row[0],row[1],bin_v,'monthly_edit_count_bin',lym))
+
+        ec = row[2]
+        bin_v = ''
+        if ec > 1 and ec <= 5: bin_v = '1-5'
+        if ec > 5 and ec <= 10: bin_v = '6-10'
+        if ec > 10 and ec <= 100: bin_v = '11-100'
+        if ec > 100 and ec <= 500: bin_v = '101-500'
+        if ec > 500 and ec <= 1000: bin_v = '501-1000'
+        if ec > 1000 and ec <= 5000: bin_v = '1001-5000'
+        if ec > 5000: bin_v = '5001+'
+        if bin_v != '':
+            edit_counts.append((row[0],row[1],bin_v,'monthly_edit_count_bin',lym))
     query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, metric_name, year_month) VALUES (?,?,?,?,?);';
-        cursor2.executemany(query,edit_counts)
-        conn2.commit()
+    cursor2.executemany(query,edit_counts)
+    conn2.commit()
+    edit_counts = []
 
-
+    # print ('stop monthly edit count'); input('stop');
 
 
     # FLAGS UPDATE
@@ -1020,6 +1214,9 @@ def editor_metrics_dump_iterator(languagecode):
     print ('Updated the editors table with highest flag')
 
 
+
+
+
     # let's update the highest_flag_year_month
     query = 'SELECT year_month, user_id, user_name, abs_value FROM '+languagecode+'wiki_editor_metrics WHERE metric_name = "granted_flag";'
     params2 = []
@@ -1051,6 +1248,7 @@ def editor_metrics_dump_iterator(languagecode):
     print ('Updated the editors table with the year month they obtained the highest flag.')
     # print(list(highest_flag.values()).count('bureaucrat'))
 
+    # print ('stop highest flag year month'); input('stop');
 
     # If an editor has been granted the 'bot' flag, even if it has been taken away, it must be a flag.
     query = 'SELECT user_id, user_name FROM '+languagecode+'wiki_editor_metrics WHERE metric_name = "granted_flag" AND abs_value LIKE "%bot";'
@@ -1126,9 +1324,14 @@ def editor_metrics_db_iterator(languagecode):
     # print (query)
     user_count = 0
     old_user_id = ''
+    old_edits = None
     expected_year_month_dt = ''
 
-    parameters = []
+    # parameters = []
+    # editors_edits_baseline_parameters = []
+
+
+
     active_months = 0
     active_months_row = 0
     total_months = 0
@@ -1138,17 +1341,23 @@ def editor_metrics_db_iterator(languagecode):
     inactive_months = 0
     max_inactive_months_row = 0
 
-    editors_edits_baseline_parameters = []
 
     total_edits = []
+    edits_increase_decrease = 0
 
+    try: os.remove(databases_path +'temporary_editor_metrics.txt')
+    except: pass
+
+    edfile2 = open(databases_path+'temporary_editor_metrics.txt', "w")
     for row in cursor.execute(query):
         edits=row[0]
         current_year_month = row[1]
         cur_user_id = row[2]
         cur_user_name = row[3]
 
+
         if cur_user_id != old_user_id and old_user_id != '':
+
             user_count += 1
 
             cycle_year_month_dt = datetime.datetime.strptime(cycle_year_month,'%Y-%m')
@@ -1158,19 +1367,30 @@ def editor_metrics_db_iterator(languagecode):
             if months_since_last_edit < 0: months_since_last_edit = 0
 
             if months_since_last_edit > 0:
-                parameters.append((old_user_id, old_user_name, months_since_last_edit, None, 'months_since_last_edit', old_year_month,''))
+
+                edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(months_since_last_edit)+'\t'+" "+'\t'+"months_since_last_edit"+'\t'+old_year_month+'\t'+" "+'\n')
+
 
             if months_since_last_edit > max_inactive_months_row:
-                parameters.append((old_user_id, old_user_name, months_since_last_edit, None, 'max_inactive_months_row', old_year_month,''))
 
-                parameters.append((old_user_id, old_user_name, 1, None, 'over_past_max_inactive_months_row', cycle_year_month,''))
+                edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(months_since_last_edit)+'\t'+" "+'\t'+"max_inactive_months_row"+'\t'+old_year_month+'\t'+" "+'\n')
+
+                edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(1)+'\t'+" "+'\t'+"over_past_max_inactive_months_row"+'\t'+cycle_year_month+'\t'+" "+'\n')
+
             else:
-                parameters.append((old_user_id, old_user_name, max_inactive_months_row, None, 'max_inactive_months_row', old_year_month,''))                
+                edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(max_inactive_months_row)+'\t'+" "+'\t'+"max_inactive_months_row"+'\t'+old_year_month+'\t'+" "+'\n')
+            
 
-            parameters.append((old_user_id, old_user_name, inactivity_periods, None, 'inactivity_periods', old_year_month,''))
-            parameters.append((old_user_id, old_user_name, active_months, None, 'active_months', old_year_month,''))
-            parameters.append((old_user_id, old_user_name, max_active_months_row, None, 'max_active_months_row', old_year_month,''))
-            parameters.append((old_user_id, old_user_name, total_months, None, 'total_months', old_year_month,''))
+
+            edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(inactivity_periods)+'\t'+" "+'\t'+"inactivity_periods"+'\t'+old_year_month+'\t'+" "+'\n')
+
+            edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(active_months)+'\t'+" "+'\t'+"active_months"+'\t'+old_year_month+'\t'+" "+'\n')
+
+            edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(max_active_months_row)+'\t'+" "+'\t'+"max_active_months_row"+'\t'+old_year_month+'\t'+" "+'\n')
+
+            edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(total_months)+'\t'+" "+'\t'+"total_months"+'\t'+old_year_month+'\t'+" "+'\n')
+
+
 
             active_months = 0
             total_months = 0
@@ -1182,24 +1402,15 @@ def editor_metrics_db_iterator(languagecode):
 
             total_edits = []
 
-            if user_count % 10000 == 0:
-
-                query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, rel_value, metric_name, year_month, timestamp) VALUES (?,?,?,?,?,?,?);'
-                cursor.executemany(query,parameters)
-                conn.commit()
-                parameters = []
+            old_edits = None
 
 
-                # edits compared to baseline
-                query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, rel_value, metric_name, year_month, timestamp) VALUES (?,?,?,?,?,?,?);'
-                cursor.executemany(query,editors_edits_baseline_parameters)
-                conn.commit()
-                editors_edits_baseline_parameters = []
 
         current_year_month_dt = datetime.datetime.strptime(current_year_month,'%Y-%m')
 
 
         # here there is a change of month
+        # if the month is not the expected one
         if expected_year_month_dt != current_year_month_dt and expected_year_month_dt != '' and old_user_id == cur_user_id:
 
             inactivity_periods += 1
@@ -1216,29 +1427,75 @@ def editor_metrics_db_iterator(languagecode):
             if active_months_row > max_active_months_row:
                 max_active_months_row = active_months_row
 
-            parameters.append((cur_user_id, cur_user_name, inactive_months, None, 'inactive_months_row', current_year_month,''))          
+      
+
+            edfile2.write(str(cur_user_id)+'\t'+cur_user_name+'\t'+str(inactive_months)+'\t'+" "+'\t'+"inactive_months_row"+'\t'+current_year_month+'\t'+" "+'\n')
+
+
             active_months_row = 1
             inactive_months = 0
+
+
+            edits_increase_decrease = 1
+
+            edfile2.write(str(cur_user_id)+'\t'+cur_user_name+'\t'+str(edits_increase_decrease)+'\t'+" "+'\t'+"monthly_edits_increasing_decreasing"+'\t'+current_year_month+'\t'+" "+'\n')
+
+
+
         else:
             active_months_row = active_months_row + 1
 
             if active_months_row > 1:
-                parameters.append((cur_user_id, cur_user_name, active_months_row, None, 'active_months_row', current_year_month,''))
+
+                edfile2.write(str(cur_user_id)+'\t'+cur_user_name+'\t'+str(active_months_row)+'\t'+" "+'\t'+"active_months_row"+'\t'+current_year_month+'\t'+" "+'\n')
+
 
             if active_months_row > max_active_months_row:
                 max_active_months_row = active_months_row
 
             if inactive_months == 0 and total_months == 0:
-                parameters.append((cur_user_id, cur_user_name, -1, None, 'inactive_months_row', current_year_month,''))
+
+                edfile2.write(str(cur_user_id)+'\t'+cur_user_name+'\t'+str(-1)+'\t'+" "+'\t'+"inactive_months_row"+'\t'+current_year_month+'\t'+" "+'\n')
+
             else:
-                parameters.append((cur_user_id, cur_user_name, inactive_months, None, 'inactive_months_row', current_year_month,''))
+
+                edfile2.write(str(cur_user_id)+'\t'+cur_user_name+'\t'+str(inactive_months)+'\t'+" "+'\t'+"inactive_months_row"+'\t'+current_year_month+'\t'+" "+'\n')
+
+
+            if old_edits != None:
+                if old_edits > edits:
+                    if edits_increase_decrease <= 0: edits_increase_decrease = edits_increase_decrease - 1
+                    else: edits_increase_decrease = -1
+
+                elif old_edits < edits:
+                    if edits_increase_decrease >= 0: edits_increase_decrease = edits_increase_decrease + 1
+                    else: edits_increase_decrease = 1
+
+                else:
+                    edits_increase_decrease = 0
+                
+
+                edfile2.write(str(cur_user_id)+'\t'+cur_user_name+'\t'+str(edits_increase_decrease)+'\t'+" "+'\t'+"monthly_edits_increasing_decreasing"+'\t'+current_year_month+'\t'+" "+'\n')
+
+
+            else:
+                edits_increase_decrease = 1
 
 
         if total_edits != []:
             median_total_edits = np.median(total_edits)
-            editors_edits_baseline_parameters.append((cur_user_id, cur_user_name, (100*edits/median_total_edits - 100), None, "monthly_edits_to_baseline", current_year_month, None))
+
+
+            edfile2.write(str(cur_user_id)+'\t'+cur_user_name+'\t'+str((100*edits/median_total_edits - 100))+'\t'+" "+'\t'+"monthly_edits_to_baseline"+'\t'+current_year_month+'\t'+" "+'\n')
+
+
+            # if cur_user_name == '-Erick-':
+            #     print (str(cur_user_id)+'\t'+cur_user_name+','+str((100*edits/median_total_edits - 100))+'\t'+" "+'\t'+"monthly_edits_to_baseline"+'\t'+current_year_month+'\n')
+
 
         total_edits.append(edits)
+
+        old_edits = edits
 
         total_months = total_months + 1
         active_months = active_months + 1
@@ -1248,46 +1505,88 @@ def editor_metrics_db_iterator(languagecode):
 
         old_user_id = cur_user_id
         old_user_name = cur_user_name
-        # print ('# update: ',old_user_id, old_user_name, active_months, max_active_months_row, max_inactive_months_row, total_months)
+
+  #      print ('# update: ',old_user_id, old_user_name, active_months, max_active_months_row, max_inactive_months_row, total_months)
         # input('')
 
 
     cycle_year_month_dt = datetime.datetime.strptime(cycle_year_month,'%Y-%m')
+
+
+    if current_year_month_dt == None:
+        print ('The table is empty. ERROR.')
+
+
     months_since_last_edit = (cycle_year_month_dt.year - current_year_month_dt.year) * 12 + cycle_year_month_dt.month - current_year_month_dt.month
+
+
     if months_since_last_edit < 0: months_since_last_edit = 0
 
     if months_since_last_edit > 0:
-        parameters.append((old_user_id, old_user_name, months_since_last_edit, None, 'months_since_last_edit', old_year_month,''))
+
+        edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(months_since_last_edit)+'\t'+" "+'\t'+"months_since_last_edit"+'\t'+old_year_month+'\t'+" "+'\n')
+
 
     if months_since_last_edit > max_inactive_months_row:
-        parameters.append((old_user_id, old_user_name, months_since_last_edit, None, 'max_inactive_months_row', old_year_month,''))
-        parameters.append((old_user_id, old_user_name, 1, None, 'over_past_max_inactive_months_row', cycle_year_month,''))
+
+        edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(months_since_last_edit)+'\t'+" "+'\t'+"max_inactive_months_row"+'\t'+old_year_month+'\t'+" "+'\n')
+
+        edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(1)+'\t'+" "+'\t'+"over_past_max_inactive_months_row"+'\t'+cycle_year_month+'\t'+" "+'\n')
+
     else:
-        parameters.append((old_user_id, old_user_name, max_inactive_months_row, None, 'max_inactive_months_row', old_year_month,''))                
-
-    parameters.append((old_user_id, old_user_name, inactivity_periods, None, 'inactivity_periods', old_year_month,''))
-    parameters.append((old_user_id, old_user_name, active_months, None, 'active_months', old_year_month,''))
-    parameters.append((old_user_id, old_user_name, max_active_months_row, None, 'max_active_months_row', old_year_month,''))
-    parameters.append((old_user_id, old_user_name, total_months, None, 'total_months', old_year_month,''))
+        edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(max_inactive_months_row)+'\t'+" "+'\t'+"max_inactive_months_row"+'\t'+old_year_month+'\t'+" "+'\n')
 
 
-    # INSERT THE LAST EDITORS
+
+
+    edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(inactivity_periods)+'\t'+" "+'\t'+"inactivity_periods"+'\t'+old_year_month+'\t'+" "+'\n')
+
+    edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(active_months)+'\t'+" "+'\t'+"active_months"+'\t'+old_year_month+'\t'+" "+'\n')
+
+    edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(max_active_months_row)+'\t'+" "+'\t'+"max_active_months_row"+'\t'+old_year_month+'\t'+" "+'\n')
+
+    edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(total_months)+'\t'+" "+'\t'+"total_months"+'\t'+old_year_month+'\t'+" "+'\n')
+
+
+
+
+    conn = sqlite3.connect(databases_path + community_health_metrics_db); cursor = conn.cursor()
+
+
+    a_file = open(databases_path+"temporary_editor_metrics.txt")
+    editors_metrics_parameters = csv.reader(a_file, delimiter="\t", quotechar = '|')
+
+    # edfile2 = open(databases_path+'temporary_editor_metrics.txt', "r")
+    # editors_metrics_parameters = []
+
+#     while True:
+#         user_count+=1
+#         line = edfile2.readline()
+#         char = line.strip().split('\t')
+
+# #        print (char)
+#         try:
+#             metric_name = char[4]
+# #            print (metric_name)
+#             if metric_name != '': editors_metrics_parameters.append((char[0],char[1],char[2],char[3],metric_name,char[5]))
+#         except:
+#             pass
+#         if user_count % 100000 == 0:
+#             query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, rel_value, metric_name, year_month) VALUES (?,?,?,?,?,?);'
+#             cursor.executemany(query,editors_metrics_parameters)
+# #            print (len(editors_metrics_parameters))
+#             conn.commit()
+#             editors_metrics_parameters = []
+#         if not line: break
+
     query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, rel_value, metric_name, year_month, timestamp) VALUES (?,?,?,?,?,?,?);'
-
-    cursor.executemany(query,parameters)
+    cursor.executemany(query,editors_metrics_parameters)
     conn.commit()
-    parameters = []
+    os.remove(databases_path +'temporary_editor_metrics.txt')
+    editors_metrics_parameters = []
 
-
-  # edits compared to baseline
-    query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, rel_value, metric_name, year_month, timestamp) VALUES (?,?,?,?,?,?,?);'
-    cursor.executemany(query,editors_edits_baseline_parameters)
-    conn.commit()
-    editors_edits_baseline_parameters = []
 
     print ('done with the monthly edits.')
-
-
 
 
 
@@ -1304,9 +1603,12 @@ def editor_metrics_db_iterator(languagecode):
 
     editing_days = []
     sum_editing_days = 0
-    # os.remove(databases_path +'temporary_editors.txt')
-    # os.remove(databases_path +'temporary_editor_metrics.txt')
-
+    
+    try: os.remove(databases_path +'temporary_editors.txt')
+    except: pass
+    try: os.remove(databases_path +'temporary_editor_metrics.txt')
+    except: pass
+    
     edfile = open(databases_path+'temporary_editors.txt', "w")
     edfile2 = open(databases_path+'temporary_editor_metrics.txt', "w")
 
@@ -1329,7 +1631,7 @@ def editor_metrics_db_iterator(languagecode):
                 else:
                     value = (100*monthly_editing_days/median_editing_days - 100)
 
-                    edfile2.write(str(old_user_id)+'\t'+old_user_name+','+str(value)+'\t'+" "+'\t'+"monthly_editing_days_to_baseline"+'\t'+current_year_month+'\n')
+                    edfile2.write(str(old_user_id)+'\t'+old_user_name+'\t'+str(value)+'\t'+" "+'\t'+"monthly_editing_days_to_baseline"+'\t'+current_year_month+'\n')
 
             sum_editing_days = 0
             editing_days = []
@@ -1367,45 +1669,63 @@ def editor_metrics_db_iterator(languagecode):
 
 
     # BASELINE MEASURES
-    edfile = open(databases_path+'temporary_editor_metrics.txt', "r")
-    editors_metrics_parameters = []
-    while True:
-        user_count+=1
-        line = edfile.readline()
-        char = line.strip().split('\t')
-        try:
-            metric_name = char[4]
-            if metric_name != '': editors_metrics_parameters.append((char[0],char[1],char[2],char[3],metric_name,char[5]))
-        except:
-            pass
-        if user_count % 10000 == 0:
-            query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, rel_value, metric_name, year_month) VALUES (?,?,?,?,?,?);'
-            cursor2.executemany(query,editors_metrics_parameters)
-            conn2.commit()
-            editors_metrics_parameters = []
-        if not line: break
+    # edfile = open(databases_path+'temporary_editor_metrics.txt', "r")
+    # editors_metrics_parameters = []
+
+    a_file = open(databases_path+"temporary_editor_metrics.txt")
+    editors_metrics_parameters = csv.reader(a_file, delimiter="\t", quotechar = '|')
+
+    # while True:
+    #     user_count+=1
+    #     line = edfile.readline()
+    #     char = line.strip().split('\t')
+    #     try:
+    #         metric_name = char[4]
+    #         if metric_name != '': editors_metrics_parameters.append((char[0],char[1],char[2],char[3],metric_name,char[5]))
+    #     except:
+    #         pass
+    #     if user_count % 100000 == 0:
+    #         query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, rel_value, metric_name, year_month) VALUES (?,?,?,?,?,?);'
+    #         cursor2.executemany(query,editors_metrics_parameters)
+    #         conn2.commit()
+    #         editors_metrics_parameters = []
+    #     if not line: break
+
+    query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, rel_value, metric_name, year_month) VALUES (?,?,?,?,?,?);'
+    cursor2.executemany(query,editors_metrics_parameters)
+    conn2.commit()
     os.remove(databases_path +'temporary_editor_metrics.txt')
 
 
     # EDITING DAYS
     # sum
-    edfile = open(databases_path+'temporary_editors.txt', "r")
-    editors_characteristics_parameters = []
-    while True:
-        user_count+=1
-        line = edfile.readline()
-        char = line.strip().split('\t')
-        try:
-            editors_characteristics_parameters.append((char[0],char[1],char[2]))
-        except:
-            pass
-        if user_count % 10000 == 0:
-            query = 'UPDATE '+languagecode+'wiki_editors SET editing_days = ? WHERE user_id = ? AND user_name = ?;'
-            cursor2.executemany(query,editors_characteristics_parameters)
-            conn2.commit()
-            editors_characteristics_parameters = []
-        if not line: break
+    # edfile = open(databases_path+'temporary_editors.txt', "r")
+    # editors_characteristics_parameters = []
+
+    a_file = open(databases_path+"temporary_editors.txt")
+    editors_characteristics_parameters = csv.reader(a_file, delimiter="\t", quotechar = '|')
+
+    # while True:
+    #     user_count+=1
+    #     line = edfile.readline()
+    #     char = line.strip().split('\t')
+    #     try:
+    #         editors_characteristics_parameters.append((char[0],char[1],char[2]))
+    #     except:
+    #         pass
+    #     if user_count % 100000 == 0:
+    #         query = 'UPDATE '+languagecode+'wiki_editors SET editing_days = ? WHERE user_id = ? AND user_name = ?;'
+    #         cursor2.executemany(query,editors_characteristics_parameters)
+    #         conn2.commit()
+    #         editors_characteristics_parameters = []
+    #     if not line: break
+
+
+    query = 'UPDATE '+languagecode+'wiki_editors SET editing_days = ? WHERE user_id = ? AND user_name = ?;'
+    cursor2.executemany(query,editors_characteristics_parameters)
+    conn2.commit()
     os.remove(databases_path +'temporary_editors.txt')
+    editors_characteristics_parameters = []
 
     # percent
     query = 'UPDATE '+languagecode+'wiki_editors SET percent_editing_days = (100*editing_days/lifetime_days);'
@@ -1417,12 +1737,15 @@ def editor_metrics_db_iterator(languagecode):
 
 
 
+
+
+
     #### --------- --------- --------- --------- --------- --------- --------- --------- ---------
 
-    # OVER PAST MAX INACTIVE MONTHS ROW
-    query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, rel_value, metric_name, year_month, timestamp) SELECT i1.user_id, i1.user_name, (i1.abs_value - i2.abs_value), i1.rel_value, "over_past_max_inactive_months_row", i2.year_month, i2.timestamp FROM '+languagecode+'wiki_editor_metrics i1 INNER JOIN '+languagecode+'wiki_editor_metrics i2 ON i1.user_id = i2.user_id WHERE i1.metric_name = "max_inactive_months_row" AND i2.metric_name = "months_since_last_edit";'
-    cursor.execute(query)
-    conn.commit()
+    # # OVER PAST MAX INACTIVE MONTHS ROW
+    # query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, rel_value, metric_name, year_month, timestamp) SELECT i1.user_id, i1.user_name, (i1.abs_value - i2.abs_value), i1.rel_value, "over_past_max_inactive_months_row", i2.year_month, i2.timestamp FROM '+languagecode+'wiki_editor_metrics i1 INNER JOIN '+languagecode+'wiki_editor_metrics i2 ON i1.user_id = i2.user_id WHERE i1.metric_name = "max_inactive_months_row" AND i2.metric_name = "months_since_last_edit";'
+    # cursor.execute(query)
+    # conn.commit()
 
 
     # OVER EDIT BIN AVERAGE PAST MAX INACTIVE MONTHS ROW
@@ -1467,9 +1790,9 @@ def community_metrics_db_iterator(languagecode):
 
     d_paths, cym = get_mediawiki_paths(languagecode)
     cycle_year_month = cym
-    print (cycle_year_month)
 
-    query_cm = 'INSERT OR IGNORE INTO '+languagecode+'wiki_community_metrics (year_month, group_name, g1_variable, g1_calculation, g1_value, g2_variable, g2_calculation, g2_value, g1_count, g2_count) VALUES (?,?,?,?,?,?,?,?,?,?);'
+
+    query_cm = 'INSERT OR IGNORE INTO '+languagecode+'wiki_community_metrics (year_month, topic, m1, m1_calculation, m1_value, m2, m2_calculation, m2_value, m1_count, m2_count) VALUES (?,?,?,?,?,?,?,?,?,?);'
 
 
 
@@ -1480,12 +1803,12 @@ def community_metrics_db_iterator(languagecode):
         edit_bins_count = {}
         query = 'SELECT count(user_id), abs_value, year_month FROM '+languagecode+'wiki_editor_metrics WHERE metric_name = "edit_count_bin" GROUP by abs_value;'
         for row in cursor.execute(query):
-            g1_count = row[0]
-            g1_value = row[1]
+            m1_count = row[0]
+            m1_value = row[1]
             year_month = row[2]
-            edit_bins_count[g1_value] = g1_count
+            edit_bins_count[m1_value] = m1_count
 
-            parameters.append((year_month, 'participative_editors', 'total_edits', 'bin', g1_value, None, None, None, g1_count, None))
+            parameters.append((year_month, 'editor_participation', 'total_edits', 'bin', m1_value, None, None, None, m1_count, None))
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
@@ -1494,12 +1817,12 @@ def community_metrics_db_iterator(languagecode):
         parameters = []
         query = 'SELECT count(e1.user_id), e1.abs_value, e1.year_month FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editor_metrics e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "edit_count_bin" AND e2.metric_name = "monthly_edits" AND e2.abs_value >= 5 GROUP BY e1.abs_value ORDER BY e1.abs_value DESC;'
         for row in cursor.execute(query):
-            g2_count = row[0]
-            g1_value = row[1]
+            m2_count = row[0]
+            m1_value = row[1]
             year_month = row[2]
-            g1_count = edit_bins_count[g1_value]
+            m1_count = edit_bins_count[m1_value]
 
-            parameters.append((year_month, 'participative_editors', 'total_edits', 'bin', g1_value, 'monthly_edits', 'threshold', 5, g1_count, g2_count))
+            parameters.append((year_month, 'editor_participation', 'total_edits', 'bin', m1_value, 'monthly_edits', 'threshold', 5, m1_count, m2_count))
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
@@ -1508,13 +1831,13 @@ def community_metrics_db_iterator(languagecode):
         parameters = []
         query = 'SELECT count(e1.user_id), e1.abs_value, e2.year_first_edit, e1.year_month FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editors e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "edit_count_bin" GROUP by e1.abs_value, e2.year_first_edit;'
         for row in cursor.execute(query):
-            g2_count = row[0]
-            g1_value = row[1]
-            g2_value = row[2]
-            g1_count = edit_bins_count[g1_value]
+            m2_count = row[0]
+            m1_value = row[1]
+            m2_value = row[2]
+            m1_count = edit_bins_count[m1_value]
 
             year_month = row[3]
-            parameters.append((year_month, 'participative_editors', 'total_edits', 'bin', g1_value, 'year_first_edit', 'bin', g2_value, g1_count, g2_count))
+            parameters.append((year_month, 'editor_participation', 'total_edits', 'bin', m1_value, 'year_first_edit', 'bin', m2_value, m1_count, m2_count))
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
@@ -1523,13 +1846,13 @@ def community_metrics_db_iterator(languagecode):
         parameters = []
         query = 'SELECT count(e1.user_id), e1.abs_value, e2.lustrum_first_edit, e1.year_month FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editors e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "edit_count_bin" GROUP by e1.abs_value, e2.lustrum_first_edit;'
         for row in cursor.execute(query):
-            g2_count = row[0]
-            g1_value = row[1]
-            g2_value = row[2]
-            g1_count = edit_bins_count[g1_value]
+            m2_count = row[0]
+            m1_value = row[1]
+            m2_value = row[2]
+            m1_count = edit_bins_count[m1_value]
             year_month = row[3]
 
-            parameters.append((year_month, 'participative_editors', 'total_edits', 'bin', g1_value, 'lustrum_first_edit', 'bin', g2_value, g1_count, g2_count))
+            parameters.append((year_month, 'editor_participation', 'total_edits', 'bin', m1_value, 'lustrum_first_edit', 'bin', m2_value, m1_count, m2_count))
         cursor.executemany(query_cm,parameters)
         conn.commit()     
         
@@ -1551,33 +1874,33 @@ def community_metrics_db_iterator(languagecode):
 
                 query = 'SELECT count(e1.user_id), e1.abs_value, e1.year_month, "'+label+'" FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editors e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "edit_count_bin" AND e2.'+variable_name+' BETWEEN '+str(interval[0])+' AND '+str(interval[1])+' GROUP by e1.abs_value;'
 
-                g2_count = row[0]
-                g1_value = row[1]
-                g2_value = label
+                m2_count = row[0]
+                m1_value = row[1]
+                m2_value = label
                 year_month = row[2]
 
-                g1_count = edit_bins_count[g1_value]
-                parameters.append((year_month, 'participative_editors', 'total_edits', 'bin', g1_value, variable_name, 'bin', g2_value, g1_count, g2_count))
+                m1_count = edit_bins_count[m1_value]
+                parameters.append((year_month, 'editor_participation', 'total_edits', 'bin', m1_value, variable_name, 'bin', m2_value, m1_count, m2_count))
 
-                cursor.executemany(query_cm,parameters)
-                conn.commit()
+        cursor.executemany(query_cm,parameters)
+        conn.commit()
 
 
         # participative_editors total_edits bin 0_100, 100_500, 500_1000, 1000_5000, 5000_10000, 10000_50000, 50000_100000, 100000_500000, 500000_1000000, 1000000_1000000000000    flag    name    sysop, autopatrolled, bureaucrat, etc.
         parameters = []
         query = 'SELECT count(e1.user_id), e1.abs_value, e2.highest_flag, e1.year_month FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editors e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "edit_count_bin" GROUP by e1.abs_value, e2.highest_flag;'
         for row in cursor.execute(query):
-            g2_count = row[0]
-            g1_value = row[1]
-            g2_value = row[2]
+            m2_count = row[0]
+            m1_value = row[1]
+            m2_value = row[2]
             year_month = row[3]
 
-            g1_count = edit_bins_count[g1_value]
-            parameters.append((year_month, 'participative_editors', 'total_edits', 'bin', g1_value, 'highest_flag', 'name', g2_value, g1_count, g2_count))
+            m1_count = edit_bins_count[m1_value]
+            parameters.append((year_month, 'editor_participation', 'total_edits', 'bin', m1_value, 'highest_flag', 'name', m2_value, m1_count, m2_count))
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
-        print ('participation')
+        print ('editor_participation')
 
 
 
@@ -1591,11 +1914,11 @@ def community_metrics_db_iterator(languagecode):
             year_month = cycle_year_month
             query = 'SELECT count(user_id), abs_value, year_month FROM '+languagecode+'wiki_editor_metrics WHERE metric_name = "'+variablef+'" AND abs_value != "bot" GROUP BY year_month, abs_value;'
             for row in cursor.execute(query):
-                g1_count = row[0]
-                g1_value = row[1]
+                m1_count = row[0]
+                m1_value = row[1]
                 year_month = row[2]
 
-                parameters.append((year_month, 'flags', 'highest_flag', 'name', g1_value, None, None, None, g1_count, None))
+                parameters.append((year_month, 'editor_flags', 'highest_flag', 'name', m1_value, None, None, None, m1_count, None))
             cursor.executemany(query_cm,parameters)
             conn.commit()
 
@@ -1606,11 +1929,11 @@ def community_metrics_db_iterator(languagecode):
         year_month = cycle_year_month
         query = 'SELECT count(user_id), highest_flag FROM '+languagecode+'wiki_editors GROUP by highest_flag;'
         for row in cursor.execute(query):
-            g1_count = row[0]
-            g1_value = row[1]
-            highest_flag_count[g1_value] = g1_count
+            m1_count = row[0]
+            m1_value = row[1]
+            highest_flag_count[m1_value] = m1_count
 
-            parameters.append((year_month, 'flags', 'highest_flag', 'name', g1_value, None, None, None, g1_count, None))
+            parameters.append((year_month, 'editor_flags', 'highest_flag', 'name', m1_value, None, None, None, m1_count, None))
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
@@ -1619,12 +1942,12 @@ def community_metrics_db_iterator(languagecode):
         parameters = []
         query = 'SELECT count(e1.user_id), e1.highest_flag, e2.year_month FROM '+languagecode+'wiki_editors e1 INNER JOIN '+languagecode+'wiki_editor_metrics e2 ON e1.user_id = e2.user_id WHERE e2.metric_name = "monthly_edits" AND e2.abs_value >= 5 GROUP BY e1.highest_flag, e2.year_month ORDER BY e1.highest_flag, e2.year_month ASC;'
         for row in cursor.execute(query):
-            g1_count = highest_flag_count[g1_value]
-            g2_count = row[0]
-            g1_value = row[1]
+            m1_count = highest_flag_count[m1_value]
+            m2_count = row[0]
+            m1_value = row[1]
             year_month = row[2]
 
-            parameters.append((year_month, 'flags', 'highest_flag', 'name', g1_value, 'monthly_edits', 'threshold', 5, g1_count, g2_count))
+            parameters.append((year_month, 'editor_flags', 'highest_flag', 'name', m1_value, 'monthly_edits', 'threshold', 5, m1_count, m2_count))
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
@@ -1632,20 +1955,20 @@ def community_metrics_db_iterator(languagecode):
         # flags   highest_flag  name    sysop, autopatrolled, bureaucrat, etc.  highest_flag_year_month bin 2001-2021           x: g1, y: g2 (last year_month)
         # flags   highest_flag  name    sysop, autopatrolled, bureaucrat, etc.  year_first_edit bin 2001-2021      
         # flags   highest_flag  name    sysop, autopatrolled, bureaucrat, etc.  lustrum_first_edit  bin 2001, 2006, 2011, 2016, 2021
-        g2_variables = ['highest_flag_year_month', 'year_first_edit','lustrum_first_edit']
+        m2s = ['highest_flag_year_month', 'year_first_edit','lustrum_first_edit']
 
-        for g2 in g2_variables:
+        for g2 in m2s:
             parameters = []
             query = 'SELECT count(user_id), highest_flag, '+g2+' FROM '+languagecode+'wiki_editors GROUP BY highest_flag, '+g2
             year_month = cycle_year_month
             for row in cursor.execute(query):
-                g2_count = row[0]
+                m2_count = row[0]
 
-                g1_value = row[1]
-                g2_value = row[2]
-                g1_count = highest_flag_count[g1_value]
+                m1_value = row[1]
+                m2_value = row[2]
+                m1_count = highest_flag_count[m1_value]
 
-                parameters.append((year_month, 'flags', 'highest_flag', 'name',  g1_value, g2, 'bin', g2_value, g1_count, g2_count))
+                parameters.append((year_month, 'editor_flags', 'highest_flag', 'name',  m1_value, g2, 'bin', m2_value, m1_count, m2_count))
             cursor.executemany(query_cm,parameters)
             conn.commit()
 
@@ -1667,13 +1990,13 @@ def community_metrics_db_iterator(languagecode):
             for interval, label in bin_dict.items():
                 query = 'SELECT count(e1.user_id), e1.abs_value, e1.year_month, "'+label+'" FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editors e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "edit_count_bin" AND e2.'+variable_name+' BETWEEN '+str(interval[0])+' AND '+str(interval[1])+' GROUP by e1.abs_value;'
 
-                g2_count = row[0]
-                g1_value = row[1]
-                g2_value = label
+                m2_count = row[0]
+                m1_value = row[1]
+                m2_value = label
                 year_month = row[2]
-                g1_count = highest_flag_count[g1_value]
+                m1_count = highest_flag_count[m1_value]
 
-                parameters.append((year_month,  'flags', 'highest_flag', 'name', g1_value, variable_name, 'bin', g2_value, g1_count, g2_count))
+                parameters.append((year_month, 'editor_flags', 'highest_flag', 'name', m1_value, variable_name, 'bin', m2_value, m1_count, m2_count))
                 cursor.executemany(query_cm,parameters)
                 conn.commit()
 
@@ -1682,13 +2005,13 @@ def community_metrics_db_iterator(languagecode):
         for interval, label in active_months.items():
             query = 'SELECT count(e1.user_id), e1.abs_value, e1.year_month, "'+label+'" FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editors e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "edit_count_bin" AND e2.metric_name = "active_months" AND e2.abs_value BETWEEN '+str(interval[0])+' AND '+str(interval[0])+' GROUP by e1.abs_value;'
 
-            g2_count = row[0]
-            g1_value = row[1]
-            g2_value = label
+            m2_count = row[0]
+            m1_value = row[1]
+            m2_value = label
             year_month = row[2]
-            g1_count = highest_flag_count[g1_value]
+            m1_count = highest_flag_count[m1_value]
 
-            parameters.append((year_month,  'flags', 'highest_flag', 'name', g1_value, "active_months", 'bin', g2_value, g1_count, g2_count))
+            parameters.append((year_month, 'editor_flags', 'highest_flag', 'name', m1_value, "active_months", 'bin', m2_value, m1_count, m2_count))
             cursor.executemany(query_cm,parameters)
             conn.commit()
 
@@ -1700,16 +2023,16 @@ def community_metrics_db_iterator(languagecode):
         query = 'SELECT count(e1.user_id), e1.highest_flag, e2.abs_value, e2.year_month FROM '+languagecode+'wiki_editors e1 INNER JOIN '+languagecode+'wiki_editor_metrics e2 ON e1.user_id = e2.user_id WHERE e2.metric_name = "edit_count_bin" GROUP BY e1.highest_flag, e2.abs_value;'
 
         for row in cursor.execute(query):
-            g1_count = highest_flag_count[g1_value]
-            g2_count = row[0]
-            g1_value = row[1]
-            g2_value = row[2]
+            m1_count = highest_flag_count[m1_value]
+            m2_count = row[0]
+            m1_value = row[1]
+            m2_value = row[2]
             year_month = row[3]
-            parameters.append((year_month, 'flags', 'highest_flag', 'name', g1_value, 'total_edits', 'bin', g2_value, g1_count, g2_count))
+            parameters.append((year_month, 'editor_flags', 'highest_flag', 'name', m1_value, 'total_edits', 'bin', m2_value, m1_count, m2_count))
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
-        print ('flags')
+        print ('editor_flags')
 
 
 
@@ -1725,11 +2048,11 @@ def community_metrics_db_iterator(languagecode):
             query = 'SELECT count(distinct user_id), year_month FROM '+languagecode+'wiki_editor_metrics WHERE metric_name = "monthly_edits" AND abs_value >= '+str(v)+' GROUP BY year_month ORDER BY year_month'
             for row in cursor.execute(query):
                 # print (row)
-                g1_count=row[0];
+                m1_count=row[0];
                 year_month=row[1]
                 if year_month == '': continue
-                parameters.append((year_month, 'active_editors', 'monthly_edits', 'threshold', v, None, None, None, g1_count, None))
-                if v == 5: active_editors_5_year_month[year_month] = g1_count
+                parameters.append((year_month, 'active_editors', 'monthly_edits', 'threshold', v, None, None, None, m1_count, None))
+                if v == 5: active_editors_5_year_month[year_month] = m1_count
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
@@ -1749,10 +2072,10 @@ def community_metrics_db_iterator(languagecode):
             # print (query)
             for row in cursor.execute(query):
                 # print (row)
-                g1_count=row[0];
+                m1_count=row[0];
                 year_month=row[1]
                 if year_month == '': continue
-                parameters.append((year_month, 'active_editors', 'monthly_edits', 'bin', str(v)+'_'+str(w) , None, None, None, g1_count, None))
+                parameters.append((year_month, 'active_editors', 'monthly_edits', 'bin', str(v)+'_'+str(w) , None, None, None, m1_count, None))
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
@@ -1762,12 +2085,12 @@ def community_metrics_db_iterator(languagecode):
         parameters = []
         for row in cursor.execute(query):
             # print (row)
-            g2_count=row[0];
+            m2_count=row[0];
             year_month=row[1]
             year_first_edit=row[2]
 
             if year_month == '': continue
-            parameters.append((year_month, 'active_editors', 'monthly_edits', 'bin', 5, 'year_first_edit', 'bin', year_first_edit, active_editors_5_year_month[year_month], g2_count))
+            parameters.append((year_month, 'active_editors', 'monthly_edits', 'threshold', 5, 'year_first_edit', 'bin', year_first_edit, active_editors_5_year_month[year_month], m2_count))
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
@@ -1777,12 +2100,12 @@ def community_metrics_db_iterator(languagecode):
         parameters = []
         for row in cursor.execute(query):
             # print (row)
-            g2_count=row[0];
+            m2_count=row[0];
             year_month=row[1]
             lustrum_first_edit=row[2]
 
             if year_month == '': continue
-            parameters.append((year_month, 'active_editors', 'monthly_edits', 'bin', 5, 'lustrum_first_edit', 'bin', lustrum_first_edit, active_editors_5_year_month[year_month], g2_count))
+            parameters.append((year_month, 'active_editors', 'monthly_edits', 'threshold', 5, 'lustrum_first_edit', 'bin', lustrum_first_edit, active_editors_5_year_month[year_month], m2_count))
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
@@ -1796,12 +2119,12 @@ def community_metrics_db_iterator(languagecode):
 
             for row in cursor.execute(query):
 
-                g2_count = row[0]
+                m2_count = row[0]
                 year_month = row[1]
-                g2_value = label
+                m2_value = label
 
-                g1_count = active_editors_5_year_month[year_month]
-                parameters.append((year_month, 'active_editors', 'monthly_edits', 'bin', 5, "active_months", 'bin', g2_value, g1_count, g2_count))
+                m1_count = active_editors_5_year_month[year_month]
+                parameters.append((year_month, 'active_editors', 'monthly_edits', 'threshold', 5, "active_months", 'bin', m2_value, m1_count, m2_count))
             cursor.executemany(query_cm,parameters)
             conn.commit()
 
@@ -1810,19 +2133,19 @@ def community_metrics_db_iterator(languagecode):
         # active_editors  monthly_edits   threshold   5   max_active_months_row   bin 2, 3, 4, 5, …
         # active_editors  monthly_edits   threshold   5   inactive_months_row bin -1, 0, 1, 2, 3, 4, 5, … 12, …
         # active_editors    monthly_edits   threshold   5   max_inactive_months_row bin 2, 3, 4, 5, …       
-        g2_variables = ['inactivity_periods','active_months_row', 'inactive_months_row','max_active_months_row','max_inactive_months_row']
+        m2s = ['inactivity_periods','active_months_row', 'inactive_months_row','max_active_months_row','max_inactive_months_row', 'monthly_edits_increasing_decreasing']
 
-        for g2_variable in g2_variables:
+        for m2 in m2s:
             parameters = []
-            query = 'SELECT count(e1.user_id), e2.abs_value, e1.year_month FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editor_metrics e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "monthly_edits" AND e1.abs_value >= 5 AND e2.metric_name = "'+g2_variable+'" GROUP BY e1.year_month, e2.abs_value;'
+            query = 'SELECT count(e1.user_id), e2.abs_value, e1.year_month FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editor_metrics e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "monthly_edits" AND e1.abs_value >= 5 AND e2.metric_name = "'+m2+'" GROUP BY e1.year_month, e2.abs_value;'
 
             for row in cursor.execute(query):
-                g2_count = row[0]
-                g2_value = row[1]
+                m2_count = row[0]
+                m2_value = row[1]
                 year_month = row[2]
-                g1_count = active_editors_5_year_month[year_month]
+                m1_count = active_editors_5_year_month[year_month]
 
-                parameters.append((year_month, 'active_editors', 'monthly_edits', 'bin', 5, g2_variable, 'bin', g2_value, g1_count, g2_count))
+                parameters.append((year_month, 'active_editors', 'monthly_edits', 'threshold', 5, m2, 'bin', m2_value, m1_count, m2_count))
             cursor.executemany(query_cm,parameters)
             conn.commit()
 
@@ -1833,26 +2156,26 @@ def community_metrics_db_iterator(languagecode):
         query = 'SELECT count(e1.user_id), e2.abs_value, e1.year_month FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editor_metrics e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "monthly_edits" AND e1.abs_value >= 5 AND e2.metric_name = "edit_count_bin" GROUP BY e2.abs_value;'
 
         for row in cursor.execute(query):
-            g2_count = row[0]
-            g2_value = row[1]
+            m2_count = row[0]
+            m2_value = row[1]
             year_month = row[2]
-            g1_count = active_editors_5_year_month[year_month]
+            m1_count = active_editors_5_year_month[year_month]
 
-            parameters.append((year_month, 'active_editors', 'monthly_edits', 'bin', 5, 'total_edits', 'bin', g2_value, g1_count, g2_count))
+            parameters.append((year_month, 'active_editors', 'monthly_edits', 'threshold', 5, 'total_edits', 'bin', m2_value, m1_count, m2_count))
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
+
         # active_editors    monthly_edits   threshold   5   flag    name    sysop, autopatrolled, bureaucrat, etc.
         parameters = []
-        query = 'SELECT count(e1.user_id), e1.abs_value, e2.highest_flag, e1.year_month FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editors e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "monthly_edits" AND e1.abs_value >= 5 GROUP by e1.abs_value, e2.highest_flag;'
+        query = 'SELECT count(e1.user_id), e2.highest_flag, e1.year_month FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editors e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "monthly_edits" AND e1.abs_value >= 5 GROUP by e1.abs_value, e2.highest_flag;'
         for row in cursor.execute(query):
-            g2_count = row[0]
-            g1_value = row[1]
-            g2_value = row[2]
-            year_month = row[3]
-            g1_count = active_editors_5_year_month[year_month]
+            m2_count = row[0]
+            m2_value = row[1]
+            year_month = row[2]
+            m1_count = active_editors_5_year_month[year_month]
 
-            parameters.append((year_month, 'retained_', 'total_edits', 'bin', g1_value, 'highest_flag', 'name', g2_value, g1_count, g2_count))
+            parameters.append((year_month, 'active_editors', 'monthly_edits', 'threshold', 5, 'highest_flag', 'name', m2_value, m1_count, m2_count))
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
@@ -1862,12 +2185,12 @@ def community_metrics_db_iterator(languagecode):
         query = 'SELECT count(e1.user_id), e2.abs_value, e1.year_month FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editor_metrics e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "monthly_edits" AND e1.abs_value >= 5 AND e2.metric_name = "monthly_editing_days" GROUP BY e1.year_month, e2.abs_value;'
 
         for row in cursor.execute(query):
-            g2_count = row[0]
-            g2_value = row[1]
+            m2_count = row[0]
+            m2_value = row[1]
             year_month = row[2]
-            g1_count = active_editors_5_year_month[year_month]
+            m1_count = active_editors_5_year_month[year_month]
 
-            parameters.append((year_month, 'active_editors', 'monthly_edits', 'bin', 5, 'monthly_editing_days', 'bin', g2_value, g1_count, g2_count))
+            parameters.append((year_month, 'active_editors', 'monthly_edits', 'threshold', 5, 'monthly_editing_days', 'bin', m2_value, m1_count, m2_count))
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
@@ -1889,7 +2212,7 @@ def community_metrics_db_iterator(languagecode):
             if year_month == '': continue
             try: registered_baseline[year_month] = int(value)
             except: pass
-            parameters.append((year_month, 'registered_editors', 'register', 'threshold', 1, None, None, None, value, None))
+            parameters.append((year_month, 'editor_retention', 'register', 'threshold', 1, None, None, None, value, None))
 
         retention_baseline = {}
         query = 'SELECT count(distinct user_id), year_month_first_edit FROM '+languagecode+'wiki_editors GROUP BY 2 ORDER BY 2 ASC;'
@@ -1901,14 +2224,14 @@ def community_metrics_db_iterator(languagecode):
             try: retention_baseline[year_month] = int(value)
             except: pass
 
-            parameters.append((year_month, 'registered_editors', 'first_edit', 'threshold', 1, None, None, None, value, None))
+            parameters.append((year_month, 'editor_retention', 'first_edit', 'threshold', 1, None, None, None, value, None))
 
             try:
-                g1_count = registered_baseline[year_month]
+                m1_count = registered_baseline[year_month]
             except:
-                g1_count = 0
+                m1_count = 0
 
-            parameters.append((year_month, 'registered_editors', 'register', 'threshold', 1, 'first_edit', 'threshold', 1, g1_count, value))
+            parameters.append((year_month, 'editor_retention', 'register', 'threshold', 1, 'first_edit', 'threshold', 1, m1_count, value))
 
 
         cursor.executemany(query_cm,parameters)
@@ -1947,15 +2270,15 @@ def community_metrics_db_iterator(languagecode):
               
 
 
-                try: g1_count = retention_baseline[year_month]
-                except: g1_count = 0
-                parameters.append((year_month, 'registered_editors', 'first_edit', 'threshold', 1, 'edited_after_time', 'threshold', metric_name, g1_count, value))
+                try: m1_count = retention_baseline[year_month]
+                except: m1_count = 0
+                parameters.append((year_month, 'editor_retention', 'first_edit', 'threshold', 1, 'edited_after_time', 'threshold', metric_name, m1_count, value))
 
 
 
-                try: g1_count = registered_baseline[year_month]
-                except: g1_count = 0
-                parameters.append((year_month, 'registered_editors', 'register', 'threshold', 1, 'edited_after_time', 'threshold', metric_name, g1_count, value))
+                try: m1_count = registered_baseline[year_month]
+                except: m1_count = 0
+                parameters.append((year_month, 'editor_retention', 'register', 'threshold', 1, 'edited_after_time', 'threshold', metric_name, m1_count, value))
 
 
         cursor.executemany(query_cm,parameters)
@@ -1982,13 +2305,13 @@ def community_metrics_db_iterator(languagecode):
                 year_month=row[1]
                 if year_month == '': continue
               
-                try: g1_count = retention_baseline[year_month]
-                except: g1_count = 0
-                parameters.append((year_month, 'registered_editors', 'first_edit', 'threshold', 1, 'edited_user_page_after_time', 'threshold', metric_name, g1_count, value))
+                try: m1_count = retention_baseline[year_month]
+                except: m1_count = 0
+                parameters.append((year_month, 'editor_retention', 'first_edit', 'threshold', 1, 'edited_user_page_after_time', 'threshold', metric_name, m1_count, value))
 
-                try: g1_count = registered_baseline[year_month]
-                except: g1_count = 0
-                parameters.append((year_month, 'registered_editors', 'register', 'threshold', 1, 'edited_user_page_after_time', 'threshold', metric_name, g1_count, value))
+                try: m1_count = registered_baseline[year_month]
+                except: m1_count = 0
+                parameters.append((year_month, 'editor_retention', 'register', 'threshold', 1, 'edited_user_page_after_time', 'threshold', metric_name, m1_count, value))
 
 
 
@@ -2016,18 +2339,18 @@ def community_metrics_db_iterator(languagecode):
                 year_month=row[1]
                 if year_month == '': continue
               
-                try: g1_count = retention_baseline[year_month]
-                except: g1_count = 0
-                parameters.append((year_month, 'registered_editors', 'first_edit', 'threshold', 1, 'edited_user_page_talk_page_after_time', 'threshold', metric_name, g1_count, value))
+                try: m1_count = retention_baseline[year_month]
+                except: m1_count = 0
+                parameters.append((year_month, 'editor_retention', 'first_edit', 'threshold', 1, 'edited_user_page_talk_page_after_time', 'threshold', metric_name, m1_count, value))
 
-                try: g1_count = registered_baseline[year_month]
-                except: g1_count = 0
-                parameters.append((year_month, 'registered_editors', 'register', 'threshold', 1, 'edited_user_page_talk_page_after_time', 'threshold', metric_name, g1_count, value))
+                try: m1_count = registered_baseline[year_month]
+                except: m1_count = 0
+                parameters.append((year_month, 'editor_retention', 'register', 'threshold', 1, 'edited_user_page_talk_page_after_time', 'threshold', metric_name, m1_count, value))
 
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
-        print ('retention')
+        print ('editor_retention')
 
 
 
@@ -2063,11 +2386,11 @@ def community_metrics_db_iterator(languagecode):
         query = 'SELECT count(user_id), lustrum_first_edit, year_last_edit FROM '+languagecode+'wiki_editors WHERE lustrum_first_edit != "" AND days_since_last_edit >= 180  GROUP BY lustrum_first_edit, year_last_edit ORDER BY lustrum_first_edit, year_last_edit;'
 
         for row in cursor.execute(query):
-            g2_count = row[0]
-            g1_value = row[1]
-            g2_value = row[2]
+            m2_count = row[0]
+            m1_value = row[1]
+            m2_value = row[2]
 
-            parameters.append((year_month, 'registered_editors', 'lustrum_first_edit', 'bin', g1_value, 'year_last_edit', 'bin', g2_value, lustrum_first_edit_dict[g1_value], g2_count))
+            parameters.append((year_month, 'editor_drop_off', 'lustrum_first_edit', 'bin', m1_value, 'year_last_edit', 'bin', m2_value, lustrum_first_edit_dict[m1_value], m2_count))
         cursor.executemany(query_cm,parameters)
         conn.commit()     
         
@@ -2077,11 +2400,11 @@ def community_metrics_db_iterator(languagecode):
         query = 'SELECT count(user_id), year_first_edit, year_last_edit FROM '+languagecode+'wiki_editors WHERE year_first_edit != "" AND days_since_last_edit >= 180  GROUP BY year_first_edit, year_last_edit ORDER BY year_first_edit, year_last_edit;'
 
         for row in cursor.execute(query):
-            g2_count = row[0]
-            g1_value = row[1]
-            g2_value = row[2]
+            m2_count = row[0]
+            m1_value = row[1]
+            m2_value = row[2]
 
-            parameters.append((year_month, 'registered_editors', 'year_first_edit', 'bin', g1_value, 'year_last_edit', 'bin', g2_value, year_first_edit_dict[g1_value], g2_count))
+            parameters.append((year_month, 'editor_drop_off', 'year_first_edit', 'bin', m1_value, 'year_last_edit', 'bin', m2_value, year_first_edit_dict[m1_value], m2_count))
         cursor.executemany(query_cm,parameters)
         conn.commit()     
         
@@ -2090,27 +2413,27 @@ def community_metrics_db_iterator(languagecode):
         parameters = []
         query = 'SELECT count(e1.user_id), e1.abs_value, e2.year_last_edit, e1.year_month FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editors e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "edit_count_bin" GROUP by e1.abs_value, e2.year_last_edit;'
         for row in cursor.execute(query):
-            g2_count = row[0]
-            g1_value = row[1]
-            g2_value = row[2]
-            g1_count = edit_bins_count[g1_value]
+            m2_count = row[0]
+            m1_value = row[1]
+            m2_value = row[2]
+            m1_count = edit_bins_count[m1_value]
             year_month = row[3]
-            parameters.append((year_month, 'participative_editors', 'total_edits', 'bin', g1_value, 'year_last_edit', 'bin', g2_value, g1_count, g2_count))
+            parameters.append((year_month, 'editor_drop_off', 'total_edits', 'bin', m1_value, 'year_last_edit', 'bin', m2_value, m1_count, m2_count))
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
 
         # participative_editors total_edits bin 0_100, 100_500, 500_1000, 1000_5000, 5000_10000, 10000_50000, 50000_100000, 100000_500000, 500000_1000000, 1000000_1000000000000    over_past_max_inactive_months_row    threshold                 
         # participative_editors total_edits bin 0_100, 100_500, 500_1000, 1000_5000, 5000_10000, 10000_50000, 50000_100000, 100000_500000, 500000_1000000, 1000000_1000000000000    over_edit_bin_average_past_max_inactive_months_row    threshold    
-        g2_variables = ['over_past_max_inactive_months_row','over_edit_bin_average_past_max_inactive_months_row','over_monthly_edit_bin_average_past_max_inactive_months_row']
-        for g2_variable in g2_variables:
+        m2s = ['over_past_max_inactive_months_row','over_edit_bin_average_past_max_inactive_months_row','over_monthly_edit_bin_average_past_max_inactive_months_row']
+        for m2 in m2s:
             parameters = []
-            query = 'SELECT count(e1.user_id), e1.abs_value FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editor_metrics e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "edit_count_bin" AND e2.metric_name = "'+g2_variable+'" AND e2.abs_value > 0 GROUP by e1.abs_value;'
+            query = 'SELECT count(e1.user_id), e1.abs_value FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editor_metrics e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "edit_count_bin" AND e2.metric_name = "'+m2+'" AND e2.abs_value > 0 GROUP by e1.abs_value;'
             for row in cursor.execute(query):
-                g2_count = row[0]
-                g1_value = row[1]
-                g1_count = edit_bins_count[g1_value]
-                parameters.append((year_month, 'participative_editors', 'total_edits', 'bin', g1_value, g2_variable, 'threshold', 0, g1_count, g2_count))
+                m2_count = row[0]
+                m1_value = row[1]
+                m1_count = edit_bins_count[m1_value]
+                parameters.append((year_month, 'editor_drop_off', 'total_edits', 'bin', m1_value, m2, 'threshold', 0, m1_count, m2_count))
             cursor.executemany(query_cm,parameters)
             conn.commit()
 
@@ -2119,29 +2442,29 @@ def community_metrics_db_iterator(languagecode):
         # registered_editors  year_first_edit bin 2001-2021   over_edit_bin_average_past_max_inactive_months_row  threshold   > 0
         # registered_editors  lustrum_first_edit  bin 2001, 2006, 2011, 2016, 2020    over_edit_bin_average_past_max_inactive_months_row  threshold   > 0
         # registered_editors  year_first_edit bin 2001-2021   over_past_max_inactive_months_row   threshold   > 0
-        g1_variables = ['year_first_edit','lustrum_first_edit']
-        g2_variables = ['over_past_max_inactive_months_row','over_edit_bin_average_past_max_inactive_months_row','over_monthly_edit_bin_average_past_max_inactive_months_row']
-        for g1_variable in g1_variables:
-            for g2_variable in g2_variables:
+        m1s = ['year_first_edit','lustrum_first_edit']
+        m2s = ['over_past_max_inactive_months_row','over_edit_bin_average_past_max_inactive_months_row','over_monthly_edit_bin_average_past_max_inactive_months_row']
+        for m1 in m1s:
+            for m2 in m2s:
 
                 parameters = []
-                query = 'SELECT count(e1.user_id), e1.'+g1_variable+' FROM '+languagecode+'wiki_editors e1 INNER JOIN '+languagecode+'wiki_editor_metrics e2 ON e1.user_id = e2.user_id WHERE e2.metric_name = "'+g2_variable+'" AND e2.abs_value > 0 GROUP by e1.'+g1_variable+';'
+                query = 'SELECT count(e1.user_id), e1.'+m1+' FROM '+languagecode+'wiki_editors e1 INNER JOIN '+languagecode+'wiki_editor_metrics e2 ON e1.user_id = e2.user_id WHERE e2.metric_name = "'+m2+'" AND e2.abs_value > 0 GROUP by e1.'+m1+';'
                 for row in cursor.execute(query):
-                    g2_count = row[0]
-                    g1_value = row[1]
+                    m2_count = row[0]
+                    m1_value = row[1]
 
-                    if g1_variable == 'year_first_edit':
+                    if m1 == 'year_first_edit':
                         try:
-                            g1_count = year_first_edit_dict[g1_value]
+                            m1_count = year_first_edit_dict[m1_value]
                         except:
-                            g1_count = 0
-                    elif g1_variable == 'lustrum_first_edit':
+                            m1_count = 0
+                    elif m1 == 'lustrum_first_edit':
                         try:
-                            g1_count = lustrum_first_edit[g1_value]
+                            m1_count = lustrum_first_edit[m1_value]
                         except:
-                            g1_count = 0
+                            m1_count = 0
     
-                    parameters.append((year_month, 'registered_editors', g1_variable, 'bin', g1_value, g2_variable, 'threshold', 0, g1_count, g2_count))
+                    parameters.append((year_month, 'editor_drop_off', m1, 'bin', m1_value, m2, 'threshold', 0, m1_count, m2_count))
                 cursor.executemany(query_cm,parameters)
                 conn.commit()
 
@@ -2160,11 +2483,11 @@ def community_metrics_db_iterator(languagecode):
                 query = 'SELECT count(e1.user_id), e1.abs_value FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editors e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "edit_count_bin" AND days_since_last_edit > '+str(days_since_last_edit)+' GROUP by e1.abs_value;'
 
             for row in cursor.execute(query):
-                g2_count = row[0]
-                g1_value = row[1]
-                g1_count = edit_bins_count[g1_value]
-                g2_value = days_since_last_edit
-                parameters.append((year_month, 'participative_editors', 'total_edits', 'bin', g1_value, 'year_last_edit', 'bin', g2_value, g1_count, g2_count))
+                m2_count = row[0]
+                m1_value = row[1]
+                m1_count = edit_bins_count[m1_value]
+                m2_value = days_since_last_edit
+                parameters.append((year_month, 'editor_drop_off', 'total_edits', 'bin', m1_value, 'days_since_last_edit', 'bin', m2_value, m1_count, m2_count))
 
             cursor.executemany(query_cm,parameters)
             conn.commit()
@@ -2178,17 +2501,17 @@ def community_metrics_db_iterator(languagecode):
         query = 'SELECT count(user_id), highest_flag, year_last_edit FROM '+languagecode+'wiki_editors WHERE days_since_last_edit >= 180 GROUP BY year_last_edit, highest_flag'
         year_month = cycle_year_month
         for row in cursor.execute(query):
-            g2_count = row[0]
-            g1_value = row[1]
+            m2_count = row[0]
+            m1_value = row[1]
 
-            g2_value = row[2]
+            m2_value = row[2]
 
             try:
-                g1_count = highest_flag_dict[g1_value]
+                m1_count = highest_flag_dict[m1_value]
             except:
-                g1_count = 0
+                m1_count = 0
 
-            parameters.append((year_month, 'flags', 'highest_flag', 'name',  g1_value, 'year_last_edit', 'bin', g2_value, g1_count, g2_count))
+            parameters.append((year_month, 'editor_drop_off', 'highest_flag', 'name',  m1_value, 'year_last_edit', 'bin', m2_value, m1_count, m2_count))
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
@@ -2203,23 +2526,23 @@ def community_metrics_db_iterator(languagecode):
             active_editors_5_year_month[row[1]] = row[0]
 
 
-        g2_variables = ['monthly_edits_to_baseline','monthly_editing_days_to_baseline']
+        m2s = ['monthly_edits_to_baseline','monthly_editing_days_to_baseline']
 
-        for g2_variable in g2_variables:
-            query = 'SELECT count(e1.user_id), e1.year_month, e2.abs_value FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editor_metrics e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "monthly_edits" AND e1.abs_value >= 5 AND e2.metric_name = "'+g2_variable+'" GROUP by e1.year_month, e2.abs_value;'
+        for m2 in m2s:
+            query = 'SELECT count(e1.user_id), e1.year_month, e2.abs_value FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editor_metrics e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "monthly_edits" AND e1.abs_value >= 5 AND e2.metric_name = "'+m2+'" GROUP by e1.year_month, e2.abs_value;'
             for row in cursor.execute(query):
 
-                g2_count = row[0]
+                m2_count = row[0]
                 year_month = row[1]
-                g2_value = row[2]
+                m2_value = row[2]
 
-                g1_count = active_editors_5_year_month[year_month]
-                parameters.append((year_month, 'active_editors', 'monthly_edits', 'bin', 5, g2_variable, 'bin', g2_value, g1_count, g2_count))
+                m1_count = active_editors_5_year_month[year_month]
+                parameters.append((year_month, 'editor_drop_off', 'monthly_edits', 'bin', 5, m2, 'bin', m2_value, m1_count, m2_count))
 
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
-        print ('drop_off')
+        print ('editor_drop_off')
 
 
 
@@ -2232,40 +2555,40 @@ def community_metrics_db_iterator(languagecode):
 
 
         # monthly_edits monthly_edits   sum main, monthly_edits_ns0_main, etc.
-        g1_variables = ['monthly_editing_days','monthly_edits','monthly_edits_ns0_main','monthly_edits_ns10_template','monthly_edits_ns11_template_talk','monthly_edits_ns12_help','monthly_edits_ns13_help_talk','monthly_edits_ns14_category','monthly_edits_ns15_category_talk','monthly_edits_ns1_talk','monthly_edits_ns2_user','monthly_edits_ns3_user_talk','monthly_edits_ns4_project','monthly_edits_ns5_project_talk','monthly_edits_ns6_file','monthly_edits_ns7_file_talk','monthly_edits_ns8_mediawiki','monthly_edits_ns9_mediawiki_talk']
+        m1s = ['monthly_editing_days','monthly_edits','monthly_edits_ns0_main','monthly_edits_ns10_template','monthly_edits_ns11_template_talk','monthly_edits_ns12_help','monthly_edits_ns13_help_talk','monthly_edits_ns14_category','monthly_edits_ns15_category_talk','monthly_edits_ns1_talk','monthly_edits_ns2_user','monthly_edits_ns3_user_talk','monthly_edits_ns4_project','monthly_edits_ns5_project_talk','monthly_edits_ns6_file','monthly_edits_ns7_file_talk','monthly_edits_ns8_mediawiki','monthly_edits_ns9_mediawiki_talk']
 
         parameters = []
         sum_monthly_edits = {}
-        for g1_variable in g1_variables:
-            query = 'SELECT SUM(abs_value), year_month FROM '+languagecode+'wiki_editor_metrics WHERE metric_name = "'+g1_variable+'" GROUP BY year_month ORDER BY year_month'
+        for m1 in m1s:
+            query = 'SELECT SUM(abs_value), year_month FROM '+languagecode+'wiki_editor_metrics WHERE metric_name = "'+m1+'" GROUP BY year_month ORDER BY year_month'
             for row in cursor.execute(query):
-                g1_count = row[0]
-                sum_monthly_edits[g1_variable,row[1]] = g1_count
-                parameters.append((year_month, 'monthly_edits', 'monthly_edits', 'sum', g1_variable, None, None, None, g1_count, None))
+                m1_count = row[0]
+                sum_monthly_edits[m1,row[1]] = m1_count
+                parameters.append((year_month, 'editor_actions', 'monthly_edits', 'sum', m1, None, None, None, m1_count, None))
 
         cursor.executemany(query_cm,parameters)
         conn.commit()
 
 
         # edits
-        g2_variables = ['lustrum_first_edit','year_first_edit','year_last_edit','highest_flag']
-        for g2_variable in g2_variables:
-            for g1_variable in g1_variables:
-                if g2_variable == 'year_last_edit':
-                    query = 'SELECT SUM(e1.abs_value), e2.'+g2_variable+', e1.year_month FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editors e2 ON e1.user_id = e2.user_id WHERE metric_name = "'+g1_variable+'" AND days_since_last_edit >= 180 GROUP BY e1.year_month, e2.'+g2_variable+' ORDER BY e1.year_month, e2.'+g2_variable
+        m2s = ['lustrum_first_edit','year_first_edit','year_last_edit','highest_flag']
+        for m2 in m2s:
+            for m1 in m1s:
+                if m2 == 'year_last_edit':
+                    query = 'SELECT SUM(e1.abs_value), e2.'+m2+', e1.year_month FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editors e2 ON e1.user_id = e2.user_id WHERE metric_name = "'+m1+'" AND days_since_last_edit >= 180 GROUP BY e1.year_month, e2.'+m2+' ORDER BY e1.year_month, e2.'+m2
                 else:
-                    query = 'SELECT SUM(e1.abs_value), e2.'+g2_variable+', e1.year_month FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editors e2 ON e1.user_id = e2.user_id WHERE metric_name = "'+g1_variable+'" GROUP BY e1.year_month, e2.'+g2_variable+' ORDER BY e1.year_month, e2.'+g2_variable
+                    query = 'SELECT SUM(e1.abs_value), e2.'+m2+', e1.year_month FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editors e2 ON e1.user_id = e2.user_id WHERE metric_name = "'+m1+'" GROUP BY e1.year_month, e2.'+m2+' ORDER BY e1.year_month, e2.'+m2
 
-                # print (g1_variable, g2_variable)
+                # print (m1, m2)
                 # print (query)
                 # input('')
                 for row in cursor.execute(query):
-                    g2_value = row[1]
-                    g2_count = row[0]
+                    m2_value = row[1]
+                    m2_count = row[0]
                     year_month = row[2]
-                    g1_count = sum_monthly_edits[g1_variable,year_month]
+                    m1_count = sum_monthly_edits[m1,year_month]
 
-                    parameters.append((year_month, 'monthly_edits', 'monthly_edits', 'sum', g1_variable, g2_variable, 'bin', g2_value, g1_count, g2_count))
+                    parameters.append((year_month, 'editor_actions', 'monthly_edits', 'sum', m1, m2, 'bin', m2_value, m1_count, m2_count))
 
                 # print (len(parameters))
 
@@ -2279,20 +2602,20 @@ def community_metrics_db_iterator(languagecode):
 
         year_months = set()
         parameters = []
-        for g1_variable in g1_variables:
+        for m1 in m1s:
 
             for interval, label in active_months.items():
 
-                query = 'SELECT SUM(e1.abs_value), e1.year_month, "'+label+'" FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editor_metrics e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "'+g1_variable+'" AND e2.metric_name = "active_months" AND e2.abs_value BETWEEN '+str(interval[0])+' AND '+str(interval[1])+' GROUP by e1.year_month, e1.abs_value;'
+                query = 'SELECT SUM(e1.abs_value), e1.year_month, "'+label+'" FROM '+languagecode+'wiki_editor_metrics e1 INNER JOIN '+languagecode+'wiki_editor_metrics e2 ON e1.user_id = e2.user_id WHERE e1.metric_name = "'+m1+'" AND e2.metric_name = "active_months" AND e2.abs_value BETWEEN '+str(interval[0])+' AND '+str(interval[1])+' GROUP by e1.year_month, e1.abs_value;'
 
                 for row in cursor.execute(query):
-                    g2_value = row[2]
-                    g2_count = row[0]
+                    m2_value = row[2]
+                    m2_count = row[0]
                     year_month = row[1]
-                    g1_count = sum_monthly_edits[g1_variable,year_month]
+                    m1_count = sum_monthly_edits[m1,year_month]
                     year_months.add(year_month)
 
-                    parameters.append((year_month, 'monthly_edits', 'monthly_edits', 'sum', g1_variable, "active_months", 'bin', g2_value, g1_count, g2_count))
+                    parameters.append((year_month, 'editor_actions', 'monthly_edits', 'sum', m1, "active_months", 'bin', m2_value, m1_count, m2_count))
 
                 cursor.executemany(query_cm,parameters)
                 conn.commit()
@@ -2343,15 +2666,15 @@ def community_metrics_db_iterator(languagecode):
 
         """
 
-        print ('actions')
+        print ('editor_actions')
 
 
-    participation()
-    flags()
-    active_editors()
-    retention()
+    # participation()
+    # flags()
+    # active_editors()
+    # retention()
     drop_off()
-    actions()
+    # actions()
 
     duration = str(datetime.timedelta(seconds=time.time() - functionstartTime))
     print(languagecode+' '+ function_name+' '+ duration)
@@ -2466,80 +2789,6 @@ S'esborren els mensuals... Ja que és massa contingut.
 
 """
 
-def export_community_health_metrics_csv(languagecode):
-
-    functionstartTime = time.time()
-    function_name = 'export_community_health_metrics_csv '+languagecode
-    print (function_name)
-
-    cursor = datetime.datetime.strptime('2001-01','%Y-%m')
-    final = datetime.datetime.strptime('2020-12','%Y-%m')
-
-    list_months = []
-    list_numerals = []
-    months_numeral = {}
-    numeral = 0
-    while cursor < final:
-        numeral += 1
-        cursor_text = cursor.strftime('%Y-%m')
-        months_numeral[cursor_text] = numeral
-        cursor = (cursor + relativedelta.relativedelta(months=1))
-        list_numerals.append(numeral)
-        list_months.append(cursor_text)
-
-    conn = sqlite3.connect(databases_path + community_health_metrics_db); cursor = conn.cursor()
-    query = 'SELECT ee.user_id, ee.user_name, ee.value as edits, ec.year_month_registration, ec.lifetime_days, ec.last_edit_timestamp, ec.bot, ec.user_flags FROM '+languagecode+'wiki_editor_metrics ee INNER JOIN '+languagecode+'wiki_editors ec ON ee.user_id = ec.user_id WHERE metric_name = "edit_count";'
-    df = pd.read_sql_query(query, conn)
-    df = df.set_index('user_id')
-
-    df1 = pd.concat([pd.DataFrame(columns=list_months),df], sort = True)
-    df2 = pd.concat([pd.DataFrame(columns=list_numerals),df], sort = True)
-
-    query = 'SELECT value, year_month, user_id, user_name FROM '+languagecode+'wiki_editor_metrics WHERE metric_name = "monthly_edits" ORDER BY user_name, year_month;'
-
-    for row in cursor.execute(query):
-        edits=row[0]
-        current_year_month = row[1]
-        current_year_month_numeral = months_numeral[current_year_month]
-        cur_user_id = row[2]
-        df1.at[cur_user_id, current_year_month] = edits
-        df2.at[cur_user_id, current_year_month_numeral] = edits
-
-    df1 = df1.fillna(0)
-    df2 = df2.fillna(0)
-
-    df1.to_csv('/srv/wcdo/datasets/ca_editors_monthly_participation_month.csv')
-    df2.to_csv('/srv/wcdo/datasets/ca_editors_monthly_participation_numeral.csv')
-
-    print (df1.head(10))
-    print (df2.head(10))
-
-    df3 = pd.concat([pd.DataFrame(columns=list_months),df], sort = True)
-    df4 = pd.concat([pd.DataFrame(columns=list_numerals),df], sort = True)
-
-    query = 'SELECT value, year_month, user_id, user_name FROM '+languagecode+'wiki_editor_metrics WHERE metric_name = "monthly_average_seconds_between_edits" ORDER BY user_name, year_month;'
-
-    for row in cursor.execute(query):
-        seconds=row[0]
-        current_year_month = row[1]
-        current_year_month_numeral = months_numeral[current_year_month]
-        cur_user_id = row[2]
-        df3.at[cur_user_id, current_year_month] = seconds
-        df4.at[cur_user_id, current_year_month_numeral] = seconds
-
-    df3 = df3.fillna(0)
-    df4 = df4.fillna(0)
-
-
-    df3.to_csv('/srv/wcdo/datasets/ca_editors_monthly_idle_time_month.csv')
-    df4.to_csv('/srv/wcdo/datasets/ca_editors_monthly_idle_time_numeral.csv')
-
-    print (df3.head(10))
-    print (df4.head(10))
-
-
-
-
 
 
 #######################################################################################
@@ -2547,7 +2796,7 @@ def export_community_health_metrics_csv(languagecode):
 class Logger_out(object): # this prints both the output to a file and to the terminal screen.
     def __init__(self):
         self.terminal = sys.stdout
-        self.log = open("community_health_metrics.out", "w")
+        self.log = open("community_health_metrics2.out", "w")
     def write(self, message):
         self.terminal.write(message)
         self.log.write(message)
@@ -2585,7 +2834,21 @@ if __name__ == '__main__':
     print (wikilanguagecodes)
 
 
-    wikilanguagecodes = ['ca']
+    # wikilanguagecodes = ['eu','it']
+    wikilanguagecodes = ['gl','eu','oc']
+#    wikilanguagecodes = ['ca']
+
+    wikilanguagecodes = ['es','fr','it']
+
+
+
+
+    wikilanguagecodes = ['ca','eu','es','fr','it']
+
+    wikilanguagecodes = ['oc','gl']#,'is','ca','eu']
+
+
+    wikilanguagecodes = ['eu','es','fr','it']
 
     
     print ('* Starting the COMMUNITY HEALTH METRICS '+cycle_year_month+' at this exact time: ' + str(datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
