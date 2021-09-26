@@ -16,7 +16,6 @@ import re
 import random
 import operator
 # databases
-import MySQLdb as mdb, MySQLdb.cursors as mdb_cursors
 import sqlite3
 # files
 import gzip
@@ -26,12 +25,9 @@ import json
 import csv
 import codecs
 # requests and others
-import requests
 import urllib
 import webbrowser
-import reverse_geocoder as rg
 import numpy as np
-from random import shuffle
 # data
 import pandas as pd
 import gc
@@ -49,33 +45,38 @@ community_health_metrics_db = 'community_health_metrics.db'
 def main():
 
 
-    create_community_health_metrics_db()
+#    create_community_health_metrics_db()
 
-    for languagecode in wikilanguagecodes: # wikilanguagecodes
+    for languagecode in wikilanguagecodes:
+        print ('*')
         print (languagecode)
- 
+
         editor_metrics_dump_iterator(languagecode) # it fills the database cawiki_editors, cawiki_editor_metrics
         print ('dump iterator done.\n')
+
+        editor_metrics_db_iterator(languagecode)
+        print (languagecode+" done")
+
+        print (wikilanguagecodes)
+        print ('*')
+
+
+        # gender(languagecode)
         # input('')
-
-
-        editor_metrics_db_iterator(languagecode) # it fills the database cawiki_editor_metrics
-        print ('database iterator done.\n')
-        print ('hell yeh')
+        # community_metrics_db_iterator(languagecode) # it fills the database cawiki_community_metrics
         # input('')
-
-#        community_metrics_db_iterator(languagecode) # it fills the database cawiki_community_metrics
-
-        # input('')
-
-
 
     print ('done')
 
-    ###
-    # export_community_health_metrics_csv(languagecode) # it fills the database cawiki_editor_metrics
-    # editor_metrics_content_diversity(languagecode)    
-    # editor_metrics_multilingual(languagecode)
+
+"""
+    for languagecode in wikilanguagecodes_plusmeta:
+        print (languagecode)
+        editor_multilingual_edit_count_dump_iterator(languagecode)
+    editor_metrics_primary_language_calculation()
+"""
+
+
 
 
 
@@ -88,15 +89,21 @@ def create_community_health_metrics_db():
     conn = sqlite3.connect(databases_path + community_health_metrics_db); cursor = conn.cursor()
 
     
-    for languagecode in wikilanguagecodes:
-
-
+    for languagecode in wikilanguagecodes_plusmeta:
         table_name = languagecode+'wiki_editors'
         try:
             cursor.execute("DROP TABLE "+table_name+";")
         except:
             pass
-        query = ("CREATE TABLE IF NOT EXISTS "+table_name+" (user_id integer, user_name text, bot text, user_flags text, highest_flag text, highest_flag_year_month text, gender text, primarybinary integer, primarylang text, primarybinary_ecount integer, totallangs_ecount integer, numberlangs integer, registration_date, year_month_registration, first_edit_timestamp text, year_month_first_edit text, year_first_edit text, lustrum_first_edit text, survived60d text, last_edit_timestamp text, year_last_edit text, lifetime_days integer, editing_days integer, percent_editing_days real, days_since_last_edit integer, seconds_between_last_two_edits integer, PRIMARY KEY (user_id, user_name))")
+        query = ("CREATE TABLE IF NOT EXISTS "+table_name+" ("+
+
+            "user_id integer, user_name text, bot text, user_flags text, highest_flag text, highest_flag_year_month text, gender text, "+
+
+            "primarybinary integer, primarylang text, edit_count integer, primary_ecount integer, totallangs_ecount integer, primary_year_month_first_edit text, primary_lustrum_first_edit text, numberlangs integer, "+
+
+            "registration_date, year_month_registration, first_edit_timestamp text, year_month_first_edit text, year_first_edit text, lustrum_first_edit text, "+
+
+            "survived60d text, last_edit_timestamp text, year_last_edit text, lifetime_days integer, editing_days integer, percent_editing_days real, days_since_last_edit integer, seconds_between_last_two_edits integer, PRIMARY KEY (user_name))")
         cursor.execute(query)
 
 
@@ -248,6 +255,7 @@ def editor_metrics_dump_iterator(languagecode):
     editor_monthly_seconds_between_edits = {}
     editor_monthly_editing_days = {}
 
+
     editor_monthly_created_articles = {}
     editor_monthly_deleted_articles = {}
     editor_monthly_moved_articles = {}
@@ -255,10 +263,18 @@ def editor_metrics_dump_iterator(languagecode):
 
     editor_monthly_accounts_created = {}
     editor_monthly_users_renamed = {}
-    editor_monthly_autoblocks = {}
+    editor_monthly_alterblocks = {}
+
+    editor_last_block_timestamp = {}
+    editor_monthly_blocked_days = {}
+    editor_monthly_blocks_received = {}
 
     editor_monthly_edits_reverted = {}
     editor_monthly_reverts_made = {}
+
+
+    editor_monthly_edits_controversial_articles = {}
+    editor_monthly_edits_controversial_articles_talk_pages = {}
 
 
 
@@ -280,6 +296,13 @@ def editor_metrics_dump_iterator(languagecode):
         dump_in = bz2.open(dump_path, 'r')
         line = 'something'
         line = dump_in.readline()
+
+
+        # load the controversial pages at this year_month and put them in a dictionary
+
+        controversial_pages = 0
+        current_controversial_pages = {}
+
 
 
         while line != '':
@@ -395,55 +418,104 @@ def editor_metrics_dump_iterator(languagecode):
 
 
                 elif event_type == 'altergroups':
-                        user_id = values[36]
-                        user_group = values[41]
-                        cur_ug = ''
-
-                        if user_group != '' and user_group != None:
-                          
-                            try:
-                                cur_ug = editor_user_group_dict[user_id]
 
 
-                                if len(cur_ug) < len(user_group):
-                                    change = user_group.replace(cur_ug,'').strip(',')
-                                    metric_name = 'granted_flag'
-                                else:
-                                    change = cur_ug.replace(user_group,'').strip(',')
-                                    metric_name = 'removed_flag' # this is only for the case that one flag is removed by another editor. when an editor removes him/herself the flag, it does not appear here.
-                            except:
-                                change = user_group
+                    user_id = values[36]
+                    user_group = values[41]
+                    cur_ug = ''
+
+                    # if values[36] in ['653', '1315', '2756', '2469', '3164', '7288', '7573', '14550', '28039', '91299', '152662', '145965']:
+                    #     print (values)
+                        # input('')
+
+                    if user_group != '' and user_group != None:
+                      
+                        try:
+                            cur_ug = editor_user_group_dict[user_id]
+
+
+                            if len(cur_ug) < len(user_group):
+                                change = user_group.replace(cur_ug,'').strip(',')
                                 metric_name = 'granted_flag'
+                            else:
+                                change = cur_ug.replace(user_group,'').strip(',')
+                                metric_name = 'removed_flag' # this is only for the case that one flag is removed by another editor. when an editor removes him/herself the flag, it does not appear here.
+                        except:
+                            change = user_group
+                            metric_name = 'granted_flag'
 
-                            # change (what is new + o -); 
-                            # user_group (what is he has after the change); 
-                            # cur_ug (what he had right before); 
-                            # values[42] (what he'll have in the future and in the end) 
+                        # change (what is new + o -); 
+                        # user_group (what is he has after the change); 
+                        # cur_ug (what he had right before); 
+                        # values[42] (what he'll have in the future and in the end) 
 
-                            # input('')
-                            editor_user_group_dict[user_id] = user_group
+                        # input('')
+                        editor_user_group_dict[user_id] = user_group
 
 
-                            if change != '':
+                        if change != '':
 
-                                # user_text = values[38]
-                                # print (user_id, user_text, ' - ', change, ' - ', user_group, ' - ', cur_ug ,' - ', values[42], ' - ', metric_name, event_timestamp)                  
-                                # print ('\n',event_type, event_entity, event_user_text, cur_ug, event_user_groups,'\n',line)
+                            # user_text = values[38]
+                            # print (user_id, user_text, ' - ', change, ' - ', user_group, ' - ', cur_ug ,' - ', values[42], ' - ', metric_name, event_timestamp)                  
+                            # print ('\n',event_type, event_entity, event_user_text, cur_ug, event_user_groups,'\n',line)
 
-                
-                                if ',' in change:
-                                    change_ = change.split(',')
-                                    event_timestamp2 = event_timestamp[:len(event_timestamp)-2] 
-                                    editor_user_group_dict_timestamp[user_id,event_timestamp] = [metric_name, change_[0], cur_ug]
-                                    editor_user_group_dict_timestamp[user_id,event_timestamp2] = [metric_name, change_[1], cur_ug]
+            
+                            if ',' in change:
+                                change_ = change.split(',')
+                                event_timestamp2 = event_timestamp[:len(event_timestamp)-2] 
+                                editor_user_group_dict_timestamp[user_id,event_timestamp] = [metric_name, change_[0], cur_ug]
+                                editor_user_group_dict_timestamp[user_id,event_timestamp2] = [metric_name, change_[1], cur_ug]
 
-                                else:
-                                    editor_user_group_dict_timestamp[user_id,event_timestamp] = [metric_name, change, cur_ug]
+                            else:
+                                editor_user_group_dict_timestamp[user_id,event_timestamp] = [metric_name, change, cur_ug]
+
+                    # if values[36] in ['653', '1315', '2756', '2469', '3164', '7288', '7573', '14550', '28039', '91299', '152662', '145965']:
+                    #     print (editor_user_group_dict_timestamp)
+
+
 
 
                 elif event_type == 'alterblocks':
-                    try: editor_monthly_autoblocks[event_user_id] = editor_monthly_autoblocks[event_user_id]+1
-                    except: editor_monthly_autoblocks[event_user_id] = 1
+                    try: editor_monthly_alterblocks[event_user_id] = editor_monthly_alterblocks[event_user_id]+1
+                    except: editor_monthly_alterblocks[event_user_id] = 1
+
+
+                    user_id = values[36]
+                    user_text = values[38]
+                    if user_text != '': user_id_user_name_dict[user_id] = user_text
+                    else: 
+                        continue
+
+
+                    if user_id not in editor_last_block_timestamp:
+                        editor_last_block_timestamp[user_id]=event_timestamp_dt
+
+                        try:
+                            editor_monthly_blocks_received[user_id]=editor_monthly_blocks_received[user_id]+1
+                        except:
+                            editor_monthly_blocks_received[user_id]=1
+
+                    else:
+                        block_timestamp = editor_last_block_timestamp[user_id]
+                        time_blocked = (event_timestamp_dt - block_timestamp).days
+                        if time_blocked == 0: time_blocked = 1
+
+                        editor_monthly_blocked_days[user_id] = time_blocked
+                        del editor_last_block_timestamp[user_id]
+
+                        # print (' _------_ ')
+                        # print (user_id, time_blocked)
+                        # print (' _------_ ')
+
+                    # print ('***')
+                    # print (values)
+                    # print (values[36],',',values[37],',',values[38],',',values[39],',',values[40])
+                    # print (event_type)
+                    # print (event_timestamp_dt)
+                    # print ('***')
+
+                    # input('')
+                    # input('')
 
 
 
@@ -519,6 +591,25 @@ def editor_metrics_dump_iterator(languagecode):
             elif page_namespace == '15':
                 try: editor_monthly_namespace15_edits[event_user_id] = editor_monthly_namespace15_edits[event_user_id]+1
                 except: editor_monthly_namespace15_edits[event_user_id] = 1
+
+
+            # check if the page is controversial
+            if controversial_pages == 1: 
+                try: 
+                    current_controversial_pages[page_title]
+
+                    if page_namespace == 0:
+
+                        try: editor_monthly_edits_controversial_articles[event_user_id] = editor_monthly_edits_controversial_articles[event_user_id]+1
+                        except: editor_monthly_edits_controversial_articles[event_user_id] = 1
+
+                    elif page_namespace == 1:
+
+                        try: editor_monthly_edits_controversial_articles[event_user_id] = editor_monthly_edits_controversial_articles[event_user_id]+1
+                        except: editor_monthly_edits_controversial_articles[event_user_id] = 1
+
+                except:
+                    pass
 
 
             # MONTHLY USER PAGE/USER PAGE TALK PAGE EDIT COUNTER
@@ -604,13 +695,33 @@ def editor_metrics_dump_iterator(languagecode):
                 for user_id, edits in editor_monthly_users_renamed.items():
                     monthly_user_actions.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_users_renamed', lym, ''))
 
-                for user_id, edits in editor_monthly_autoblocks.items():
-                    monthly_user_actions.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_autoblocks', lym, ''))
+                for user_id, edits in editor_monthly_alterblocks.items():
+                    monthly_user_actions.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_alterblocks', lym, ''))
 
+                for user_id, edits in editor_monthly_blocks_received.items():
+
+                    try:
+                        monthly_user_actions.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_blocks_received', lym, ''))
+                    except:
+                        pass
+
+
+                for user_id, edits in editor_monthly_blocked_days.items():
+
+                    try:
+                        monthly_user_actions.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_blocked_days', lym, ''))
+                    except:
+                        pass
+                    # print ((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_blocked_days', lym, ''))
+                    # input('')
 
 
                 for user_id, edits in editor_monthly_edits_reverted.items():
-                    monthly_user_actions.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_edits_reverted', lym, ''))
+
+                    try:
+                        monthly_user_actions.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_edits_reverted', lym, ''))
+                    except:
+                        pass
 
                 for user_id, edits in editor_monthly_reverts_made.items():
                     monthly_user_actions.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_reverts_made', lym, ''))
@@ -619,6 +730,18 @@ def editor_metrics_dump_iterator(languagecode):
 
                 for user_id, edits in editor_monthly_edits.items():
                     monthly_edits.append((user_id, user_id_user_name_dict[user_id], edits, None, 'monthly_edits', lym, ''))
+
+
+
+                # CONTROVERSIAL ARTICLES EDITS
+                for user_id, edits in editor_monthly_edits_controversial_articles.items():
+                    monthly_edits.append((user_id, user_id_user_name_dict[user_id], edits, None, 'editor_monthly_edits_controversial_articles', lym, ''))
+
+                for user_id, edits in editor_monthly_edits_controversial_articles_talk_pages.items():
+                    monthly_edits.append((user_id, user_id_user_name_dict[user_id], edits, None, 'editor_monthly_edits_controversial_articles_talk_pages', lym, ''))
+
+
+
 
                 for user_id, seconds_list in editor_monthly_seconds_between_edits.items():
                     if seconds_list == None: continue
@@ -722,7 +845,7 @@ def editor_metrics_dump_iterator(languagecode):
                             namespaces.append((user_id, user_id_user_name_dict[user_id], flags, None, metric_name, lym, timestamp))
                             # print ((user_id, user_id_user_name_dict[user_id], flags, None, metric_name, lym, timestamp))
 
-                    except: pass                    
+                    except: pass
 
 
                 query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, rel_value, metric_name, year_month, timestamp) VALUES (?,?,?,?,?,?,?);'
@@ -750,7 +873,10 @@ def editor_metrics_dump_iterator(languagecode):
                 editor_monthly_undeleted_articles = {}
                 editor_monthly_accounts_created = {}
                 editor_monthly_users_renamed = {}
-                editor_monthly_autoblocks = {}
+                editor_monthly_alterblocks = {}
+                editor_monthly_blocks_received = {}
+                editor_monthly_blocked_days = {}
+
                 editor_monthly_edits_reverted = {}
                 editor_monthly_reverts_made = {}
 
@@ -777,10 +903,14 @@ def editor_metrics_dump_iterator(languagecode):
                 editor_monthly_editing_days = {}
                 editor_user_group_dict_timestamp = {}
 
+
+                # controversial pages edits
+                editor_monthly_edits_controversial_articles = {}
+                editor_monthly_edits_controversial_articles_talk_pages = {}
+
         
             last_year_month = current_year_month
-
-
+            # month change
 
 
 
@@ -886,9 +1016,14 @@ def editor_metrics_dump_iterator(languagecode):
 
 
         # MONTHLY EDITS/SECONDS INSERT (LAST ROUND)
-        lym = last_year_month.strftime('%Y-%m')
+        print (last_year_month)
 
-        if lym != cym:
+        try:
+            lym = last_year_month.strftime('%Y-%m')
+        except:
+            lym = ''
+
+        if lym != cym and lym != '':
 
             monthly_edits = []
             for event_user_id, edits in editor_monthly_edits.items():
@@ -985,11 +1120,11 @@ def editor_metrics_dump_iterator(languagecode):
             try: se = editor_seconds_since_last_edit[user_id]
             except: se = None
 
-            user_characteristics1.append((user_id, user_name, registration_date, year_month_registration,  fe, year_month, year_first_edit, lustrum_first_edit, survived60d))
+            user_characteristics1.append((user_id, user_name, registration_date, year_month_registration,  fe, year_month, year_first_edit, lustrum_first_edit))
 
  
             if le != None:
-                user_characteristics2.append((bot, user_flags, le, year_last_edit, lifetime_days, days_since_last_edit, se, user_id, user_name))
+                user_characteristics2.append((bot, user_flags, le, year_last_edit, lifetime_days, days_since_last_edit, se, survived60d, user_id, user_name))
 
 
             # if user_id == 296 or user_name == 'Jolle':
@@ -999,15 +1134,15 @@ def editor_metrics_dump_iterator(languagecode):
                 # print (editor_last_edit_timestamp[user_id])
 
 
-        query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editors (user_id, user_name, registration_date, year_month_registration, first_edit_timestamp, year_month_first_edit, year_first_edit, lustrum_first_edit, survived60d) VALUES (?,?,?,?,?,?,?,?,?);'
+        query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editors (user_id, user_name, registration_date, year_month_registration, first_edit_timestamp, year_month_first_edit, year_first_edit, lustrum_first_edit) VALUES (?,?,?,?,?,?,?,?);'
         cursor.executemany(query,user_characteristics1)
         conn.commit()
 
-        query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editors (bot, user_flags, last_edit_timestamp, year_last_edit, lifetime_days, days_since_last_edit, seconds_between_last_two_edits, user_id, user_name) VALUES (?,?,?,?,?,?,?,?,?);'
+        query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editors (bot, user_flags, last_edit_timestamp, year_last_edit, lifetime_days, days_since_last_edit, seconds_between_last_two_edits, survived60d, user_id, user_name) VALUES (?,?,?,?,?,?,?,?,?,?);'
         cursor.executemany(query,user_characteristics2)
         conn.commit()
 
-        query = 'UPDATE '+languagecode+'wiki_editors SET bot = ?, user_flags = ?, last_edit_timestamp = ?, year_last_edit = ?, lifetime_days = ?, days_since_last_edit = ?, seconds_between_last_two_edits = ? WHERE user_id = ? AND user_name = ?;'
+        query = 'UPDATE '+languagecode+'wiki_editors SET bot = ?, user_flags = ?, last_edit_timestamp = ?, year_last_edit = ?, lifetime_days = ?, days_since_last_edit = ?, seconds_between_last_two_edits = ?, survived60d = ?, user_id = ? WHERE user_name = ?;'
         cursor.executemany(query,user_characteristics2)
         conn.commit()
 
@@ -1044,7 +1179,11 @@ def editor_metrics_dump_iterator(languagecode):
             user_id_user_name_dict2[k]=user_id_user_name_dict[k]
         for k in editor_monthly_users_renamed.keys():
             user_id_user_name_dict2[k]=user_id_user_name_dict[k]
-        for k in editor_monthly_autoblocks.keys():
+        for k in editor_monthly_alterblocks.keys():
+            user_id_user_name_dict2[k]=user_id_user_name_dict[k]
+        for k in editor_monthly_blocks_received.keys():
+            user_id_user_name_dict2[k]=user_id_user_name_dict[k]
+        for k in editor_monthly_blocked_days.keys():
             user_id_user_name_dict2[k]=user_id_user_name_dict[k]
         for k in editor_monthly_edits_reverted.keys():
             user_id_user_name_dict2[k]=user_id_user_name_dict[k]
@@ -1068,7 +1207,7 @@ def editor_metrics_dump_iterator(languagecode):
 
  
     # AGGREGATED METRICS (EDIT COUNTS)
-    monthly_aggregated_metrics = {'monthly_edits':'edit_count', 'monthly_user_page_edit_count': 'edit_count_editor_user_page', 'monthly_user_page_talk_page_edit_count': 'edit_count_editor_user_page_talk_page', 'monthly_edits_ns0_main':'edit_count_ns0_main', 'monthly_edits_ns1_talk':'edit_count_ns1_talk', 'monthly_edits_ns2_user':'edit_count_ns2_user', 'monthly_edits_ns3_user_talk': 'edit_count_ns3_user_talk', 'monthly_edits_ns4_project':'edit_count_ns4_project', 'monthly_edits_ns5_project_talk': 'edit_count_ns5_project_talk', 'monthly_edits_ns6_file': 'edit_count_edits_ns6_file', 'monthly_edits_ns7_file_talk':'edit_count_ns7_file_talk', 'monthly_edits_ns8_mediawiki': 'edit_count_ns8_mediawiki', 'monthly_edits_ns9_mediawiki_talk': 'edit_count_ns9_mediawiki_talk', 'monthly_edits_ns10_template':'edit_count_ns10_template', 'monthly_edits_ns11_template_talk':'edit_count_ns11_template_talk', 'monthly_edits_ns12_help':'edit_count_ns12_help','monthly_edits_ns13_help_talk':'edit_count_ns13_help_talk','monthly_edits_ns14_category':'edit_count_ns14_category','monthly_edits_ns15_category_talk':'edit_count_ns15_category_talk','monthly_created_articles':'created_articles_count','monthly_deleted_articles':'deleted_articles_count','monthly_moved_articles':'moved_articles_count','monthly_undeleted_articles':'undeleted_articles_count','monthly_accounts_created':'created_accounts_count','monthly_users_renamed':'users_renamed_count','monthly_autoblocks':'autoblocks_count','monthly_edits_reverted':'edits_reverted_count','monthly_reverts_made':'reverts_made_count'}
+    monthly_aggregated_metrics = {'monthly_edits':'edit_count', 'editor_monthly_edits_controversial_articles':'edit_count_controversial_articles','editor_monthly_edits_controversial_articles_talk_pages':'edit_count_controversial_articles_talk_pages','monthly_user_page_edit_count': 'edit_count_editor_user_page', 'monthly_user_page_talk_page_edit_count': 'edit_count_editor_user_page_talk_page', 'monthly_edits_ns0_main':'edit_count_ns0_main', 'monthly_edits_ns1_talk':'edit_count_ns1_talk', 'monthly_edits_ns2_user':'edit_count_ns2_user', 'monthly_edits_ns3_user_talk': 'edit_count_ns3_user_talk', 'monthly_edits_ns4_project':'edit_count_ns4_project', 'monthly_edits_ns5_project_talk': 'edit_count_ns5_project_talk', 'monthly_edits_ns6_file': 'edit_count_edits_ns6_file', 'monthly_edits_ns7_file_talk':'edit_count_ns7_file_talk', 'monthly_edits_ns8_mediawiki': 'edit_count_ns8_mediawiki', 'monthly_edits_ns9_mediawiki_talk': 'edit_count_ns9_mediawiki_talk', 'monthly_edits_ns10_template':'edit_count_ns10_template', 'monthly_edits_ns11_template_talk':'edit_count_ns11_template_talk', 'monthly_edits_ns12_help':'edit_count_ns12_help','monthly_edits_ns13_help_talk':'edit_count_ns13_help_talk','monthly_edits_ns14_category':'edit_count_ns14_category','monthly_edits_ns15_category_talk':'edit_count_ns15_category_talk','monthly_created_articles':'created_articles_count','monthly_deleted_articles':'deleted_articles_count','monthly_moved_articles':'moved_articles_count','monthly_undeleted_articles':'undeleted_articles_count','monthly_accounts_created':'created_accounts_count','monthly_users_renamed':'users_renamed_count','monthly_alterblocks':'auterblocks_count','monthly_blocks_received':'blocks_received_count','monthly_blocked_days':'blocked_days','monthly_edits_reverted':'edits_reverted_count','monthly_reverts_made':'reverts_made_count'}
 
 
     conn2 = sqlite3.connect(databases_path + community_health_metrics_db); cursor2 = conn2.cursor()
@@ -1196,19 +1335,19 @@ def editor_metrics_dump_iterator(languagecode):
                     highest_count = {key:val for key, val in highest_count.items() if val == maxval} # we are choosing the flag that exists more in the community.
 
                     f = list(highest_count.keys())[0]
-                    params.append((f, user_id, user_name))
+                    params.append((f, user_name))
                     user_id_flag[user_id]=f
                 else:
                     f = list(highest_rank.keys())[0]
-                    params.append((f, user_id, user_name))
+                    params.append((f, user_name))
                     user_id_flag[user_id]=f
 
         else:
             if user_flags in flag_ranks and 'bot' not in user_flags:
-                params.append((user_flags, user_id, user_name))
+                params.append((user_flags, user_name))
                 user_id_flag[user_id]=user_flags
 
-    query = 'UPDATE '+languagecode+'wiki_editors SET highest_flag = ? WHERE user_id = ? AND user_name = ?;'
+    query = 'UPDATE '+languagecode+'wiki_editors SET highest_flag = ? WHERE user_name = ?;'
     cursor.executemany(query,params)
     conn.commit()
     print ('Updated the editors table with highest flag')
@@ -1237,11 +1376,11 @@ def editor_metrics_dump_iterator(languagecode):
         # print ((ex_flag, flag,year_month,user_id,user_name))
         if ex_flag in flag:
             # print ((ex_flag, flag,year_month,user_id,user_name))
-            params2.append((year_month,user_id,user_name))
+            params2.append((year_month,user_name))
 
 
     # print (params2)
-    query = 'UPDATE '+languagecode+'wiki_editors SET highest_flag_year_month = ? WHERE user_id = ? AND user_name = ?;'
+    query = 'UPDATE '+languagecode+'wiki_editors SET highest_flag_year_month = ? WHERE user_name = ?;'
     cursor.executemany(query,params2)
     conn.commit()
 
@@ -1260,9 +1399,9 @@ def editor_metrics_dump_iterator(languagecode):
             bottype = 'name,group'
         else:
             bottype = 'group'
-        params.append((bottype,row[0],username))
+        params.append((bottype,username))
 
-    query = 'UPDATE '+languagecode+'wiki_editors SET bot = ? WHERE user_id = ? AND user_name = ?;'
+    query = 'UPDATE '+languagecode+'wiki_editors SET bot = ? WHERE user_name = ?;'
     cursor.executemany(query,params)
     conn.commit()
 
@@ -1287,8 +1426,8 @@ def editor_metrics_dump_iterator(languagecode):
         for row in rows:
             gender_params.append((row[0], row[1], row[2]))
             if len(gender_params) % 10000 == 0:
-                query = 'UPDATE '+languagecode+'wiki_editors SET gender = ? WHERE user_id = ? AND user_name = ?;'
-                cursor.executemany(query,user_characteristics2)
+                query = 'UPDATE '+languagecode+'wiki_editors SET gender = ? WHERE user_name = ?;'
+                cursor.executemany(query,gender_params)
                 conn.commit()
                 gender_params = []
 
@@ -1722,15 +1861,21 @@ def editor_metrics_db_iterator(languagecode):
 
 
     query = 'UPDATE '+languagecode+'wiki_editors SET editing_days = ? WHERE user_id = ? AND user_name = ?;'
-    cursor2.executemany(query,editors_characteristics_parameters)
-    conn2.commit()
+    try:
+        cursor2.executemany(query,editors_characteristics_parameters)
+        conn2.commit()
+    except:
+        pass
     os.remove(databases_path +'temporary_editors.txt')
     editors_characteristics_parameters = []
 
     # percent
-    query = 'UPDATE '+languagecode+'wiki_editors SET percent_editing_days = (100*editing_days/lifetime_days);'
-    cursor.execute(query)
-    conn.commit()
+    try:
+        query = 'UPDATE '+languagecode+'wiki_editors SET percent_editing_days = (100*editing_days/lifetime_days);'
+        cursor.execute(query)
+        conn.commit()
+    except:
+        pass
 
     print ('done with the monthly editing days.')
     duration = str(datetime.timedelta(seconds=time.time() - functionstartTime))
@@ -1741,6 +1886,9 @@ def editor_metrics_db_iterator(languagecode):
 
 
     #### --------- --------- --------- --------- --------- --------- --------- --------- ---------
+
+    conn = sqlite3.connect(databases_path + community_health_metrics_db); cursor = conn.cursor()
+
 
     # # OVER PAST MAX INACTIVE MONTHS ROW
     # query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, rel_value, metric_name, year_month, timestamp) SELECT i1.user_id, i1.user_name, (i1.abs_value - i2.abs_value), i1.rel_value, "over_past_max_inactive_months_row", i2.year_month, i2.timestamp FROM '+languagecode+'wiki_editor_metrics i1 INNER JOIN '+languagecode+'wiki_editor_metrics i2 ON i1.user_id = i2.user_id WHERE i1.metric_name = "max_inactive_months_row" AND i2.metric_name = "months_since_last_edit";'
@@ -2680,6 +2828,7 @@ def community_metrics_db_iterator(languagecode):
     print(languagecode+' '+ function_name+' '+ duration)
 
 
+
 """
 
 def editor_metrics_social(languagecode):
@@ -2712,17 +2861,295 @@ Hipòtesi. Quan els editors deixen d'interactuar amb ells... Estan més a prop d
 
 
 
+"""
 
-def editor_metrics_multilingual(languagecode):
-    print('')
-# * wiki_editors
-# (user_id integer, user_name text, bot text, user_flags text, primarybinary, primarylang text, primarybinary_ecount, totallangs_ecount, numberlangs integer)
+def editor_multilingual_edit_count_dump_iterator(languagecode):
 
-# FUNCTION
-# multilingualism: això cal una funció que passi per les diferents bases de dades i creï aquesta
+    functionstartTime = time.time()
+    function_name = 'editor_multilingual_edit_count_dump_iterator '+languagecode
+    print (function_name)
 
 
-def editor_metrics_content_diversity(languagecode):
+
+    def get_mediawiki_paths_inverse(languagecode):
+
+        cym = cycle_year_month
+        d_paths = []
+
+        print ('/public/dumps/public/other/mediawiki_history/'+cym)
+        if os.path.isdir('/public/dumps/public/other/mediawiki_history/'+cym)==False:
+            cym = datetime.datetime.strptime(cym,'%Y-%m')-dateutil.relativedelta.relativedelta(months=1)
+            cym = cym.strftime('%Y-%m')
+            print ('/public/dumps/public/other/mediawiki_history/'+cym)
+
+        dumps_path = '/public/dumps/public/other/mediawiki_history/'+cym+'/'+languagecode+'wiki/'+cym+'.'+languagecode+'wiki.all-time.tsv.bz2'
+
+        if os.path.isfile(dumps_path):
+            print ('one all-time file.')
+            d_paths.append(dumps_path)
+        else:
+            print ('multiple files.')
+            for year in range (2025, 1999, -1):
+                dumps_path = '/public/dumps/public/other/mediawiki_history/'+cym+'/'+languagecode+'wiki/'+cym+'.'+languagecode+'wiki.'+str(year)+'.tsv.bz2'
+                if os.path.isfile(dumps_path): 
+                    d_paths.append(dumps_path)
+
+            if len(d_paths) == 0:
+                for year in range(2025, 1999, -1): # months
+                    for month in range(13, 0, -1):
+                        if month > 9:
+                            dumps_path = '/public/dumps/public/other/mediawiki_history/'+cym+'/'+languagecode+'wiki/'+cym+'.'+languagecode+'wiki.'+str(year)+'-'+str(month)+'.tsv.bz2'
+                        else:
+                            dumps_path = '/public/dumps/public/other/mediawiki_history/'+cym+'/'+languagecode+'wiki/'+cym+'.'+languagecode+'wiki.'+str(year)+'-0'+str(month)+'.tsv.bz2'
+
+                        if os.path.isfile(dumps_path) == True:
+                            d_paths.append(dumps_path)
+
+        print(len(d_paths))
+        print (d_paths)
+
+        return d_paths, cym
+
+
+    d_paths, cym = get_mediawiki_paths_inverse(languagecode)
+    cym_timestamp_dt = datetime.datetime.today().replace(day=1) #.strftime('%Y-%m-%d %H:%M:%S')
+
+
+
+    if (len(d_paths)==0):
+        print ('dump error. this language has no mediawiki_history dump: '+languagecode)
+        # wikilanguages_utils.send_email_toolaccount('dump error at script '+script_name, dumps_path)
+        # quit()
+
+    conn = sqlite3.connect(databases_path + community_health_metrics_db); cursor = conn.cursor()
+
+
+
+    for dump_path in d_paths:
+
+        print('\n'+dump_path)
+        iterTime = time.time()
+
+        dump_in = bz2.open(dump_path, 'r')
+        line = 'something'
+        line = dump_in.readline()
+
+        user_characteristics1 = []
+
+        while line != '':
+
+            # print ('*')
+            # print (line)
+            # print (seconds_since_last_edit)
+            # print ('*')
+            # input('')            
+
+            line = dump_in.readline()
+            line = line.rstrip().decode('utf-8')[:-1]
+            values = line.split('\t')
+            if len(values)==1: continue
+
+
+            event_user_id = values[5]
+            try: int(event_user_id)
+            except: 
+                continue
+            event_user_text = values[7]
+
+            event_user_is_anonymous = values[17]
+            if event_user_is_anonymous == True or event_user_id == '': continue
+            registration_date = values[18]
+
+            editor_first_edit_timestamp = values[20]
+            year_first_edit = ''
+            if editor_first_edit_timestamp != None and editor_first_edit_timestamp != '':  
+                year_first_edit = datetime.datetime.strptime(editor_first_edit_timestamp[:len(editor_first_edit_timestamp)-2],'%Y-%m-%d %H:%M:%S').strftime('%Y')
+            edit_count = values[21]
+
+           
+            if registration_date == None: # THIS IS SOMETHING WE "ASSUME" BECAUSE THERE ARE MANY ACCOUNTS WITHOUT A REGISTRATION DATE.
+                registration_date = editor_first_edit_timestamp
+
+
+            if registration_date != '' and registration_date != None: year_month_registration = datetime.datetime.strptime(registration_date[:len(registration_date)-2],'%Y-%m-%d %H:%M:%S').strftime('%Y-%m')
+            else: year_month_registration = None
+
+   
+            fe = editor_first_edit_timestamp
+            if fe != None and fe != '':  
+                year_month = datetime.datetime.strptime(fe[:len(fe)-2],'%Y-%m-%d %H:%M:%S').strftime('%Y-%m')
+                year_first_edit = datetime.datetime.strptime(fe[:len(fe)-2],'%Y-%m-%d %H:%M:%S').strftime('%Y')
+
+                if int(year_first_edit) >= 2001 < 2006: lustrum_first_edit = '2001-2005'
+                if int(year_first_edit) >= 2006 < 2011: lustrum_first_edit = '2006-2010'
+                if int(year_first_edit) >= 2011 < 2016: lustrum_first_edit = '2011-2015'
+                if int(year_first_edit) >= 2016 < 2021: lustrum_first_edit = '2016-2020'
+                if int(year_first_edit) >= 2021 < 2026: lustrum_first_edit = '2021-2025'
+
+            else:
+                year_month = None
+                year_first_edit = None
+                lustrum_first_edit = None
+
+
+            user_characteristics1.append((event_user_id, event_user_text, registration_date, year_month_registration, edit_count, fe, year_month, year_first_edit, lustrum_first_edit))
+#            print ((event_user_id, event_user_text, registration_date, year_month_registration, edit_count, fe, year_month, year_first_edit, lustrum_first_edit))
+#            input('')
+
+
+        query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editors (user_id, user_name, registration_date,  year_month_registration, edit_count, first_edit_timestamp, year_month_first_edit, year_first_edit, lustrum_first_edit) VALUES (?,?,?,?,?,?,?,?,?);'
+        cursor.executemany(query,reversed(user_characteristics1))
+        conn.commit()
+
+#        print ('eh')
+#        input('')
+        user_characteristics1 = []
+
+        # END OF THE DUMP!!!!
+        print ('end of the dump.')
+        print ('*')
+        print (str(datetime.timedelta(seconds=time.time() - iterTime)))
+#        input('')
+
+    duration = str(datetime.timedelta(seconds=time.time() - functionstartTime))
+    print(languagecode+' '+ function_name+' '+ duration)
+
+
+
+
+def editor_metrics_primary_language_calculation():
+
+    conn = sqlite3.connect(databases_path + 'community_health_metrics.db'); cursor = conn.cursor()
+
+
+    query = ("CREATE TABLE IF NOT EXISTS allwiki_editors (lang text, user_name text, edit_count integer, year_month_first_edit text, lustrum_first_edit text, PRIMARY KEY (lang, user_name));")
+    cursor.execute(query)
+
+    for languagecode in wikilanguagecodes_plusmeta:
+        query = 'INSERT INTO allwiki_editors SELECT "'+languagecode+'", user_name, edit_count, year_month_first_edit, lustrum_first_edit FROM '+languagecode+'wiki_editors WHERE user_name != "";'
+        cursor.execute(query)
+        conn.commit()
+        print (languagecode)
+    print ('Allwiki editors table filled')
+
+
+    try: os.remove(databases_path +'temporary_editor_metrics.txt')
+    except: pass
+    edfile2 = open(databases_path+'temporary_editor_metrics.txt', "w")
+
+    query = 'SELECT user_name, lang, edit_count, year_month_first_edit, lustrum_first_edit FROM allwiki_editors ORDER BY user_name, edit_count DESC;'
+
+
+    numbereditors = 0
+    totallangs_ecount = 0
+    numberlangs = 0
+    primarylang = ''
+    primary_ecount = 0
+    primary_year_month_first_edit = ''
+    primary_lustrum_first_edit = ''
+
+
+    old_user_name = ''
+
+
+    for row in cursor.execute(query):
+        user_name = row[0]
+        lang = row[1]
+        try: edit_count = int(row[2])
+        except: edit_count = 0
+        
+        try: year_month_first_edit = str(row[3])
+        except: year_month_first_edit = ''
+
+        try: lustrum_first_edit = str(row[4])
+        except: lustrum_first_edit = ''
+
+
+        if user_name != old_user_name and old_user_name != '':
+            numbereditors+=1
+
+            # if old_user_name == 'Marcmiquel':
+            #     print (primarylang+'\t'+str(primary_ecount)+'\t'+str(totallangs_ecount)+'\t'+str(numberlangs)+'\t'+ primary_year_month_first_edit+'\t'+primary_lustrum_first_edit+'\t'+user_name+'\n')
+            #     input('')
+
+            try:
+                edfile2.write(primarylang+'\t'+str(primary_ecount)+'\t'+str(totallangs_ecount)+'\t'+str(numberlangs)+'\t'+ primary_year_month_first_edit+'\t'+primary_lustrum_first_edit+'\t'+old_user_name+'\n')
+            except:
+                pass
+
+            # choose whether to insert or not
+            if numbereditors % 100000 == 0:
+                print (numbereditors)
+                print ((100*numbereditors/64609745))
+                print ('\n')
+
+            # clean
+            totallangs_ecount = 0
+            numberlangs = 0
+            primarylang = ''
+            primary_ecount = 0
+            primary_year_month_first_edit = ''
+            primary_lustrum_first_edit = ''
+
+
+        if edit_count > 4 and lang != "meta":
+            numberlangs+=1
+
+        if (edit_count > primary_ecount and lang != "meta"): # by definition we do not consider that meta can be a primary language. it is not a wikipedia.
+            primarylang = lang
+            primary_ecount = edit_count
+
+            primary_year_month_first_edit = year_month_first_edit
+            primary_lustrum_first_edit = lustrum_first_edit
+
+        if primarylang == '' and lang != "meta":
+            primarylang = lang
+
+
+        totallangs_ecount+=edit_count
+
+        old_user_name = user_name
+        old_lang = lang
+
+
+    edfile2.write(primarylang+'\t'+str(primary_ecount)+'\t'+str(totallangs_ecount)+'\t'+str(numberlangs)+'\t'+ primary_year_month_first_edit+'\t'+primary_lustrum_first_edit+'\t'+user_name+'\n')
+
+    print ('All in the txt file')
+
+    query = "DROP TABLE allwiki_editors;"
+    cursor.execute(query)
+    conn.commit()
+    print ('Allwiki editors table deleted')
+
+
+    ###
+    conn = sqlite3.connect(databases_path + 'community_health_metrics.db'); cursor = conn.cursor()
+
+    for languagecode in wikilanguagecodes_plusmeta:
+        print (languagecode)
+        a_file = open(databases_path+"temporary_editor_metrics.txt")
+        parameters = csv.reader(a_file, delimiter="\t", quotechar = '|')
+
+        query = 'UPDATE '+languagecode+'wiki_editors SET (primarylang, primary_ecount, totallangs_ecount, numberlangs, primary_year_month_first_edit, primary_lustrum_first_edit) = (?,?,?,?,?,?) WHERE user_name = ?;'
+
+        cursor.executemany(query,parameters)
+        conn.commit()
+
+
+    print ("All the original tables updated with the editors' primary language")
+
+    try: os.remove(databases_path +'temporary_editor_metrics.txt')
+    except: pass
+
+
+
+
+
+
+
+
+
+def editor_metrics_content_edits(languagecode):
     print('')
 #    https://stackoverflow.com/questions/28816330/sqlite-insert-if-not-exist-else-increase-integer-value
 
@@ -2735,7 +3162,7 @@ def editor_metrics_content_diversity(languagecode):
 # això cal una funció que corri el mediawiki history amb aquest objectiu havent preseleccionat editors també.
 
     functionstartTime = time.time()
-    function_name = 'editor_metrics_content_diversity '+languagecode
+    function_name = 'editor_metrics_content_edits '+languagecode
     print (function_name)
     print (languagecode)
 
@@ -2759,6 +3186,13 @@ def editor_metrics_content_diversity(languagecode):
         parameters = []
         editors_params = []
 
+
+        # load the controversial pages at this year_month and put them in a dictionary
+        controversial_pages = 0
+        current_controversial_pages = {}
+
+
+
         iter = 0
         while line != '':
             # iter += 1
@@ -2772,9 +3206,89 @@ def editor_metrics_content_diversity(languagecode):
 
             page_id = values[23]
             page_title = values[25]
-            page_namespace = int(values[28])
-            edit_count = values[34]
+            page_namespace = values[28]   
 
+
+            # check if the page is controversial
+            if controversial_pages == 1: 
+                try: 
+                    current_controversial_pages[page_title]
+
+                    if page_namespace == 0:
+
+                        try: editor_monthly_edits_controversial_articles[event_user_id] = editor_monthly_edits_controversial_articles[event_user_id]+1
+                        except: editor_monthly_edits_controversial_articles[event_user_id] = 1
+
+                    elif page_namespace == 1:
+
+                        try: editor_monthly_edits_controversial_articles[event_user_id] = editor_monthly_edits_controversial_articles[event_user_id]+1
+                        except: editor_monthly_edits_controversial_articles[event_user_id] = 1
+
+                except:
+                    pass
+
+
+            #######---------    ---------    ---------    ---------    ---------    ---------    
+
+            # CHECK MONTH CHANGE AND INSERT MONTHLY EDITS/NAMESPACES EDITS/SECONDS
+            current_year_month = datetime.datetime.strptime(event_timestamp_dt.strftime('%Y-%m'),'%Y-%m')
+            if last_year_month != current_year_month and last_year_month != 0:
+                lym = last_year_month.strftime('%Y-%m')
+                print (current_year_month, lym, cym)
+
+                lym_sp = lym.split('-')
+                ly = lym_sp[0]
+                lm = lym_sp[1]
+
+                lym_days = calendar.monthrange(int(ly),int(lm))[1]
+
+
+                monthly_edits = []
+
+                # CONTROVERSIAL ARTICLES EDITS
+                for user_id, edits in editor_monthly_edits_controversial_articles.items():
+                    monthly_edits.append((user_id, user_id_user_name_dict[user_id], edits, None, 'editor_monthly_edits_controversial_articles', lym, ''))
+
+                for user_id, edits in editor_monthly_edits_controversial_articles_talk_pages.items():
+                    monthly_edits.append((user_id, user_id_user_name_dict[user_id], edits, None, 'editor_monthly_edits_controversial_articles_talk_pages', lym, ''))
+
+
+
+                query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, rel_value, metric_name, year_month, timestamp) VALUES (?,?,?,?,?,?,?);'
+                cursor.executemany(query,monthly_edits)
+
+                conn.commit()
+                monthly_edits = []
+
+                # controversial pages edits
+                editor_monthly_edits_controversial_articles = {}
+                editor_monthly_edits_controversial_articles_talk_pages = {}
+
+        
+            last_year_month = current_year_month
+            # month change
+
+
+
+ 
+    # AGGREGATED METRICS (EDIT COUNTS)
+    monthly_aggregated_metrics = {'editor_monthly_edits_controversial_articles':'edit_count_controversial_articles','editor_monthly_edits_controversial_articles_talk_pages':'edit_count_controversial_articles_talk_pages'}
+
+
+    conn2 = sqlite3.connect(databases_path + community_health_metrics_db); cursor2 = conn2.cursor()
+    for monthly_metric_name, metric_name in monthly_aggregated_metrics.items():
+        edit_counts = []
+        query = 'SELECT user_id, user_name, SUM(abs_value) FROM '+languagecode+'wiki_editor_metrics WHERE metric_name = "'+monthly_metric_name+'" GROUP BY 2;'
+
+        for row in cursor.execute(query):
+            edit_counts.append((row[0],row[1],row[2],metric_name,lym))
+
+        query = 'INSERT OR IGNORE INTO '+languagecode+'wiki_editor_metrics (user_id, user_name, abs_value, metric_name, year_month) VALUES (?,?,?,?,?);';
+        cursor2.executemany(query,edit_counts)
+        conn2.commit()
+
+
+"""
 
 Pel tema Edits A Ccc
 Diccionari de diccionaris amb el què va editant cada editor cada mes. Més ràpid pel hash.
@@ -2791,12 +3305,15 @@ S'esborren els mensuals... Ja que és massa contingut.
 
 
 
+
+
+
 #######################################################################################
 
 class Logger_out(object): # this prints both the output to a file and to the terminal screen.
     def __init__(self):
         self.terminal = sys.stdout
-        self.log = open("community_health_metrics2.out", "w")
+        self.log = open("community_health_metrics.out", "w")
     def write(self, message):
         self.terminal.write(message)
         self.log.write(message)
@@ -2826,29 +3343,76 @@ if __name__ == '__main__':
     languages = wikilanguages_utils.load_wiki_projects_information();
 
     wikilanguagecodes = sorted(languages.index.tolist())
-    print ('checking languages Replicas databases and deleting those without one...')
-    # Verify/Remove all languages without a replica database
-    for a in wikilanguagecodes:
-        if wikilanguages_utils.establish_mysql_connection_read(a)==None:
-            wikilanguagecodes.remove(a)
-    print (wikilanguagecodes)
+    # print ('checking languages Replicas databases and deleting those without one...')
+    # # Verify/Remove all languages without a replica database
+    # for a in wikilanguagecodes:
+    #     if wikilanguages_utils.establish_mysql_connection_read(a)==None:
+    #         wikilanguagecodes.remove(a)
+    # print (wikilanguagecodes)
+#    wikipedialanguage_numberarticles = []
 
+#    wikilanguagecodes_plusmeta = wikilanguagecodes
+    # wikilanguagecodes_plusmeta.append('meta')
+
+
+    # langolist, langlistnames = wikilanguages_utils.get_langs_group('Africa', None, None, None, wikipedialanguage_numberarticles, territories, languages)
+
+
+    # langolist2, langlistnames2 = wikilanguages_utils.get_langs_group('Eastern Europe', None, None, None, wikipedialanguage_numberarticles, territories, languages)
+    
+
+    # langolist = langolist+langolist2
+    # langlistnames.update(langlistnames2)
+
+    # langolist = langolist+['es','ca','it','eu','meta']
+    # langlistnames.update({'Spanish (es)':'es', 'Catalan (ca)':'ca', 'Italian (it)':'it', 'Basque (eu)':'eu', 'Meta (meta)':'meta'})
+
+
+
+    # print (langolist)
+    # print (langlistnames)
+    # print (len(langolist))
+
+    # wikilanguagecodes = langolist
+
+    print (wikilanguagecodes)
+    langolist = wikilanguagecodes
+
+    # these are the languages we are currently processing. 
+    wikilanguagecodes2 = ['so', 'ny', 'ha', 'ki', 'af', 'pt', 'ti', 'bm', 'sn', 'tn', 'ff', 'tw', 'ig', 'din', 'ar', 'kr', 'rn', 'zu', 'mg', 'sg', 'kg', 'ln', 'st', 'hz', 'arz', 'fr', 'ary', 'kbp', 'ee', 'kab', 'sw', 'am', 'en', 'om', 'nqo', 'tum', 've', 'rw', 'ak', 'aa', 'simple', 'es', 'nso', 'yo', 'wo', 'ss', 'ng', 'ts', 'lg', 'xh', 'kj', 'kv', 'olo', 'myv', 'tt', 'sk', 'krc', 'be_x_old', 'lez', 'bxr', 'mk', 'fi', 'mn', 'de', 'ru', 'be', 'crh', 'lbe', 'vep', 'cu', 'gag', 'sah', 'bg', 'koi', 'xal', 'tr', 'mdf', 'pl', 'cs', 'ro', 'rue', 'mrj', 'rmy', 'szl', 'mhr', 'av', 'mo', 'uk', 'cv', 'os', 'ce', 'csb', 'yi', 'ba', 'hu', 'kbd', 'sl', 'inh', 'ady', 'tyv', 'udm', 'lt', 'es', 'ca', 'it', 'eu', 'meta']
+
+#    wikilanguagecodes = [x for x in langolist if x not in wikilanguagecodes2]
+
+    print (wikilanguagecodes)
+    # input('')
 
     # wikilanguagecodes = ['eu','it']
-    wikilanguagecodes = ['gl','eu','oc']
-#    wikilanguagecodes = ['ca']
 
-    wikilanguagecodes = ['es','fr','it']
+    # wikilanguagecodes = ['gl','eu','oc']
 
-
+    # wikilanguagecodes = ['es','fr','it']
 
 
-    wikilanguagecodes = ['ca','eu','es','fr','it']
+    # wikilanguagecodes = ['ca','eu','es','fr','it']
 
-    wikilanguagecodes = ['oc','gl']#,'is','ca','eu']
+    # wikilanguagecodes = ['oc','gl']#,'is','ca','eu']
+
+    # wikilanguagecodes = ['eu','es','fr','it']
+
+    # wikilanguagecodes = ['pl']#,'is','ca','eu']
+
+    # wikilanguagecodes_plusmeta = ['ar']
 
 
-    wikilanguagecodes = ['eu','es','fr','it']
+    # ['so', 'ny', 'ha', 'ki', 'af', 'pt', 'ti', 'bm', 'sn', 'tn', 'ff', 'tw', 'ig', 'din', 'ar', 'kr', 'rn', 'zu', 'mg', 'sg', 'kg', 'ln', 'st', 'hz', 'arz', 'fr', 'ary', 'kbp', 'ee', 'kab', 'sw', 'am', 'en', 'om', 'nqo', 'tum', 've', 'rw', 'ak', 'aa', 'simple', 'es', 'nso', 'yo', 'wo', 'ss', 'ng', 'ts', 'lg', 'xh', 'kj', 'kv', 'olo', 'myv', 'tt', 'sk', 'krc', 'be_x_old', 'lez', 'bxr', 'mk', 'fi', 'mn', 'de', 'ru', 'be', 'crh', 'lbe', 'vep', 'cu', 'gag', 'sah', 'bg', 'koi', 'xal', 'tr', 'mdf', 'pl', 'cs', 'ro', 'rue', 'mrj', 'rmy', 'szl', 'mhr', 'av', 'mo', 'uk', 'cv', 'os', 'ce', 'csb', 'yi', 'ba', 'hu', 'kbd', 'sl', 'inh', 'ady', 'tyv', 'udm', 'lt', 'es', 'ca', 'it', 'eu', 'meta']
+
+
+    # aquestes són les que falten:
+#    ['ab', 'ace', 'als', 'an', 'ang', 'arc', 'as', 'ast', 'atj', 'avk', 'awa', 'ay', 'az', 'azb', 'ban', 'bar', 'bat_smg', 'bcl', 'bh', 'bi', 'bjn', 'bn', 'bo', 'bpy', 'br', 'bs', 'bug', 'cbk_zam', 'cdo', 'ceb', 'ch', 'cho', 'chr', 'chy', 'ckb', 'co', 'cr', 'cy', 'da', 'diq', 'dsb', 'dty', 'dv', 'dz', 'el', 'eml', 'eo', 'et', 'ext', 'fa', 'fiu_vro', 'fj', 'fo', 'frp', 'frr', 'fur', 'fy', 'ga', 'gan', 'gcr', 'gd', 'gl', 'glk', 'gn', 'gom', 'gor', 'got', 'gu', 'gv', 'hak', 'haw', 'he', 'hi', 'hif', 'ho', 'hr', 'hsb', 'ht', 'hy', 'hyw', 'ia', 'id', 'ie', 'ii', 'ik', 'ilo', 'io', 'is', 'iu', 'ja', 'jam', 'jbo', 'jv', 'ka', 'kaa', 'kk', 'kl', 'km', 'kn', 'ko', 'ks', 'ksh', 'ku', 'kw', 'ky', 'la', 'lad', 'lb', 'lfn', 'li', 'lij', 'lld', 'lmo', 'lo', 'lrc', 'ltg', 'lv', 'mai', 'map_bms', 'mh', 'mi', 'min', 'ml', 'mnw', 'mr', 'ms', 'mt', 'mus', 'mwl', 'my', 'mzn', 'na', 'nah', 'nap', 'nds', 'nds_nl', 'ne', 'new', 'nl', 'nn', 'no', 'nov', 'nrm', 'nv', 'oc', 'or', 'pa', 'pag', 'pam', 'pap', 'pcd', 'pdc', 'pfl', 'pi', 'pih', 'pms', 'pnb', 'pnt', 'ps', 'qu', 'rm', 'roa_rup', 'roa_tara', 'ru_sib', 'sa', 'sat', 'sc', 'scn', 'sco', 'sd', 'se', 'sh', 'shn', 'si', 'sm', 'smn', 'sq', 'sr', 'srn', 'stq', 'su', 'sv', 'szy', 'ta', 'tcy', 'te', 'tet', 'tg', 'th', 'tk', 'tl', 'tlh', 'to', 'tokipona', 'tpi', 'ty', 'ug', 'ur', 'uz', 'vec', 'vi', 'vls', 'vo', 'wa', 'war', 'wuu', 'xmf', 'za', 'zea', 'zh', 'zh_classical', 'zh_min_nan', 'zh_yue']
+
+    wikilanguagecodes = ['oc', 'or', 'pa', 'pag', 'pam', 'pap', 'pcd', 'pdc', 'pfl', 'pi', 'pih', 'pms', 'pnb', 'pnt', 'ps', 'qu', 'rm', 'roa_rup', 'roa_tara', 'ru_sib', 'sa', 'sat', 'sc', 'scn', 'sco', 'sd', 'se', 'sh', 'shn', 'si', 'sm', 'smn', 'sq', 'sr', 'srn', 'stq', 'su', 'sv', 'szy', 'ta', 'tcy', 'te', 'tet', 'tg', 'th', 'tk', 'tl', 'tlh', 'to', 'tokipona', 'tpi', 'ty', 'ug', 'ur', 'uz', 'vec', 'vi', 'vls', 'vo', 'wa', 'war', 'wuu', 'xmf', 'za', 'zea', 'zh', 'zh_classical', 'zh_min_nan', 'zh_yue']
+
+#    wikilanguagecodes = ['nv']
 
     
     print ('* Starting the COMMUNITY HEALTH METRICS '+cycle_year_month+' at this exact time: ' + str(datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
